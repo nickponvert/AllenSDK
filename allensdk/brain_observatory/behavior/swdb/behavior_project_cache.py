@@ -173,6 +173,13 @@ class ExtendedNwbApi(BehaviorOphysNwbApi):
             columns={'index':'absolute_flash_number'})
         return stimulus_presentations
 
+    def get_segmentation_mask_image(self):
+        segmentation_mask_image = super(ExtendedNwbApi, self).get_segmentation_mask_image()
+        print(type(segmentation_mask_image))
+        segmentation_mask_image.data[segmentation_mask_image.data > 0] = 1
+        return segmentation_mask_image
+
+
 class ExtendedBehaviorSession(BehaviorOphysSession):
 
     def __init__(self, api):
