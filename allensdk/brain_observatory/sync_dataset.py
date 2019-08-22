@@ -87,8 +87,9 @@ class Dataset(object):
     """
 
 
-    FRAME_KEYS = ('frames', 'stim_vsync')
+    FRAME_KEYS = ('frames', 'stim_vsync', )
     PHOTODIODE_KEYS = ('photodiode', 'stim_photodiode')
+
 
     def __init__(self, path):
         self.dfile = self.load(path)

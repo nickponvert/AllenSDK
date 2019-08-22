@@ -3,7 +3,7 @@ import json
 import os
 from allensdk.internal.core.lims_utilities import safe_system_path
 from . import PostgresQueryMixin
-from allensdk.brain_observatory.mesoscope.sync import get_sync_data
+from allensdk.brain_observatory.mesoscope.meso_sync import get_sync_data
 import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.DEBUG)

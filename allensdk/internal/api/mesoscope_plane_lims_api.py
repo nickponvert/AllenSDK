@@ -2,7 +2,7 @@ from allensdk.internal.api.behavior_ophys_api import BehaviorOphysLimsApi
 from allensdk.brain_observatory.behavior.image_api import ImageApi
 from allensdk.brain_observatory.behavior.sync import get_stimulus_rebase_function
 from allensdk.brain_observatory.behavior.trials_processing import get_trials
-from allensdk.brain_observatory.mesoscope.sync import get_sync_data
+from allensdk.brain_observatory.mesoscope.meso_sync import get_sync_data
 import uuid
 import matplotlib.image as mpimg
 from allensdk.api.cache import memoize
