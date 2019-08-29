@@ -32,7 +32,7 @@ def get_stimulus_presentations(data, stimulus_timestamps):
     # workaround to rename columns to harmonize with visual coding and rebase timestamps to sync time
     stimulus_table.insert(loc=0, column='flash_number', value=np.arange(0, len(stimulus_table)))
     stimulus_table = stimulus_table.rename(columns={'frame': 'start_frame', 'time': 'start_time', 'flash_number':'stimulus_presentations_id'})
-    stimulus_table.start_time = [stimulus_timestamps[start_frame] for start_frame in stimulus_table.start_frame.values]
+    stimulus_table.start_time = [stimulus_timestamps[start_frame] for start_frame in stimulus_table.start_frame.values.astype(int)]
     end_time = []
     for end_frame in stimulus_table.end_frame.values:
         if not np.isnan(end_frame):
@@ -160,6 +160,7 @@ def get_visual_stimuli_df(data, time):
     stimuli = data['items']['behavior']['stimuli']
     n_frames = len(time)
     visual_stimuli_data = []
+    all_draw_log_rising_edges = 0
     for stimuli_group_name, stim_dict in stimuli.items():
         for idx, (attr_name, attr_value, _time, frame, ) in \
                 enumerate(stim_dict["set_log"]):
@@ -195,12 +196,12 @@ def get_visual_stimuli_df(data, time):
                     "omitted": False,
                 })
 
-    visual_stimuli_df = pd.DataFrame(data=visual_stimuli_data)
+        #save draw log rising edges for this stimulus group
+        draw_log_rising_edges_this_group = len(np.where(np.diff(stim_dict['draw_log'])==1)[0])
+        all_draw_log_rising_edges += draw_log_rising_edges_this_group
 
-    # ensure that every rising edge in the draw_log is accounted for in the visual_stimuli_df
-    draw_log_rising_edges = len(np.where(np.diff(stimuli['images']['draw_log'])==1)[0])
-    discrete_flashes = len(visual_stimuli_data)
-    assert draw_log_rising_edges == discrete_flashes, "the number of rising edges in the draw log is expected to match the number of flashes in the stimulus table"
+    visual_stimuli_df = pd.DataFrame(data=visual_stimuli_data)
+    #  assert all_draw_log_rising_edges == len(visual_stimuli_df), "the number of rising edges in the draw log is expected to match the number of flashes in the stimulus table"
 
     # Add omitted flash info:
     omitted_flash_list = []
