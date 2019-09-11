@@ -5,10 +5,14 @@ import json
 import re
 
 from allensdk import one
+from allensdk.internal.api import PostgresQueryMixin
 from allensdk.brain_observatory.behavior.behavior_ophys_api.behavior_ophys_nwb_api import BehaviorOphysNwbApi
 from allensdk.brain_observatory.behavior.behavior_ophys_session import BehaviorOphysSession
 from allensdk.core.lazy_property import LazyProperty
 from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
+from allensdk.api.cache import memoize
+from allensdk.internal.api.behavior_ophys_api import BehaviorOphysLimsApi
+from allensdk.brain_observatory.behavior.stimulus_processing import get_stimulus_presentations, get_stimulus_metadata
 from allensdk.brain_observatory.behavior.image_api import ImageApi
 
 csv_io = {
@@ -49,6 +53,7 @@ class BehaviorProjectCache(object):
             'manifest_path': os.path.join(cache_base, 'visual_behavior_data_manifest.csv'),
             'nwb_base_dir': os.path.join(cache_base, 'nwb_files'),
             'analysis_files_base_dir': os.path.join(cache_base, 'analysis_files'),
+            'pickle_analysis_files_base_dir': os.path.join(cache_base, 'pickle_file_extended_stim'),
             'analysis_files_metadata_path': os.path.join(cache_base, 'analysis_files_metadata.json'),
         }
 
@@ -76,6 +81,7 @@ class BehaviorProjectCache(object):
 
         self.nwb_base_dir = self.cache_paths['nwb_base_dir']
         self.analysis_files_base_dir = self.cache_paths['analysis_files_base_dir']
+        self.pickle_analysis_files_path = self.cache_paths['pickle_analysis_files_base_dir']
         self.analysis_files_metadata = self.get_analysis_files_metadata(
             self.cache_paths['analysis_files_metadata_path']
         )
@@ -107,6 +113,12 @@ class BehaviorProjectCache(object):
         return os.path.join(
             self.analysis_files_base_dir,
             'extended_stimulus_presentations_df_{}.h5'.format(experiment_id)
+        )
+
+    def get_pickle_file_extended_stimulus_presentations_df(self, behavior_session_id):
+        return os.path.join(
+            self.pickle_analysis_files_path, 
+            "extended_stimulus_presentations_df_behavior_session_{}.h5".format(behavior_session_id)
         )
 
     def get_session(self, experiment_id):
@@ -467,6 +479,220 @@ class ExtendedBehaviorSession(BehaviorOphysSession):
     def get_segmentation_mask_image(self):
         masks = self.roi_masks
         return np.any([submask for submask in masks.values()], axis=0)
+
+
+
+
+def get_all_behavior_sessions(donor_id,
+                              exclude_imaging_sessions = False,
+                              imaging_rigs = ['CAM2P.3', 'CAM2P.4', 'CAM2P.5']):
+    postgres_api = PostgresQueryMixin()
+    all_behavior_sessions_query = '''
+    SELECT
+
+    vbc.id as container_id,
+    vbc.workflow_state as container_qc_state,
+    d.id as donor_id,
+    bs.id as behavior_session_id,
+    bs.created_at,
+    bs.foraging_id,
+    e.name as equipment_name,
+    os.id as ophys_session_id,
+    os.name as ophys_session_name,
+    oe.id as ophys_experiment_id,
+    oe.workflow_state as ophys_qc_state,
+    p.name as project_name,
+    imaging_depths.depth as imaging_depth,
+    st.acronym as targeted_structure
+
+    FROM visual_behavior_experiment_containers vbc
+    JOIN specimens sp ON sp.id=vbc.specimen_id
+    JOIN donors d ON d.id=sp.donor_id
+    LEFT JOIN behavior_sessions bs ON bs.donor_id = d.id
+    LEFT JOIN equipment e on e.id = bs.equipment_id
+    LEFT JOIN ophys_sessions os on os.foraging_id = bs.foraging_id
+    LEFT JOIN projects p ON p.id=os.project_id
+    LEFT JOIN ophys_experiments oe on oe.ophys_session_id = os.id
+    LEFT JOIN structures st ON st.id=oe.targeted_structure_id
+    LEFT JOIN imaging_depths ON imaging_depths.id=oe.imaging_depth_id
+
+    WHERE d.id = {}
+    '''.format(donor_id)
+
+    all_sessions = pd.read_sql(all_behavior_sessions_query, postgres_api.get_connection())
+    if exclude_imaging_sessions:
+        all_sessions = all_sessions.query('equipment_name not in @imaging_rigs')
+    all_sessions = all_sessions.sort_values('created_at').reset_index(drop=True)
+    return all_sessions
+
+def time_from_last(flash_times, other_times):
+
+    last_other_index = np.searchsorted(a=other_times, v=flash_times) - 1
+    time_from_last_other = flash_times - other_times[last_other_index]
+
+    # flashes that happened before the other thing happened should return nan
+    time_from_last_other[last_other_index == -1] = np.nan
+
+    return time_from_last_other
+
+def trace_average(values, timestamps, start_time, stop_time):
+    values_this_range = values[((timestamps >= start_time) & (timestamps < stop_time))]
+    return values_this_range.mean()
+
+def find_change(image_index, omitted_index):
+    '''
+    Args: 
+        image_index (pd.Series): The index of the presented image for each flash
+        omitted_index (int): The index value for omitted stimuli
+
+    Returns:
+        change (np.array of bool): Whether each flash was a change flash
+    '''
+
+    change = np.diff(image_index) != 0
+    change = np.concatenate([np.array([False]), change])  # First flash not a change
+    omitted = image_index == omitted_index
+    omitted_inds = np.flatnonzero(omitted)
+    change[omitted_inds] = False
+
+    if image_index.iloc[-1] == omitted_index:
+        # If the last flash is omitted we can't set the +1 for that omitted idx
+        change[omitted_inds[:-1] + 1] = False
+    else:
+        change[omitted_inds + 1] = False
+                                               
+    return change
+
+
+class PickleFileApi(BehaviorOphysLimsApi):
+    def __init__(self, behavior_session_id):
+        self.behavior_session_id = behavior_session_id
+        
+    @memoize
+    def get_behavior_stimulus_file(self):
+        api = PostgresQueryMixin()
+        query = '''
+                SELECT stim.storage_directory || stim.filename AS stim_file 
+                FROM behavior_sessions bs 
+                LEFT JOIN well_known_files stim 
+                    ON stim.attachable_id=bs.id 
+                    AND stim.attachable_type = 'BehaviorSession' 
+                    AND stim.well_known_file_type_id IN (
+                        SELECT id 
+                        FROM well_known_file_types 
+                        WHERE name = 'StimulusPickle'
+                        ) 
+                WHERE bs.id= {};
+                '''.format(self.behavior_session_id)
+        return api.fetchone(query, strict=True)
+
+    @memoize
+    def get_stimulus_timestamps(self):
+        # We don't have a sync file, so we have to get vsync times from the pickle file
+        behavior_stimulus_file = self.get_behavior_stimulus_file()
+        data = pd.read_pickle(behavior_stimulus_file)
+        vsyncs = data["items"]["behavior"]["intervalsms"]
+        return np.hstack((0, vsyncs)).cumsum() / 1000.0  # cumulative time
+
+    @memoize
+    def get_licks(self):
+        # Get licks from pickle file instead of sync
+        behavior_stimulus_file = self.get_behavior_stimulus_file()
+        data = pd.read_pickle(behavior_stimulus_file)
+        stimulus_timestamps = self.get_stimulus_timestamps()
+        lick_frames = data['items']['behavior']['lick_sensors'][0]['lick_events']
+        lick_times = [stimulus_timestamps[frame] for frame in lick_frames]
+        return pd.DataFrame({'time': lick_times})
+    
+    def get_stimulus_rebase_function(self):
+        return lambda x: x
+    
+    @memoize
+    def get_stimulus_presentations(self):
+        stimulus_timestamps = self.get_stimulus_timestamps()
+        behavior_stimulus_file = self.get_behavior_stimulus_file()
+        data = pd.read_pickle(behavior_stimulus_file)
+        stimulus_presentations_df_pre = get_stimulus_presentations(data, stimulus_timestamps)
+        #stimulus_presentations = get_stimulus_presentations(data, stimulus_timestamps)
+        if pd.isnull(stimulus_presentations_df_pre['image_name']).all():
+            if ~pd.isnull(stimulus_presentations_df_pre['orientation']).all():
+                stimulus_presentations_df_pre['image_name'] = stimulus_presentations_df_pre['image_name'].astype(str)
+                for ind_row in stimulus_presentations_df_pre.index:
+                    stimulus_presentations_df_pre.at[ind_row, 'image_name'] = 'gratings_{}'.format(
+                        stimulus_presentations_df_pre.at[ind_row, 'orientation']
+                    )
+            else:
+                raise ValueError('non_null orientation and image_name')
+                    
+        if 'images' in data["items"]["behavior"]["stimuli"]:
+            stimulus_metadata_df = get_stimulus_metadata(data) 
+        else:
+            image_names = stimulus_presentations_df_pre['image_name'].unique()
+            image_groups = image_names
+            image_sets = ['vertical' if x in ['gratings_0', 'gratings_180'] else 'horizontal' for x in image_names]
+            stimulus_metadata_df = pd.DataFrame({
+                'image_name': image_names,
+                'image_group': image_groups,
+                'image_set': image_sets
+            })
+            stimulus_metadata_df.index.name = 'image_index'
+
+        idx_name = stimulus_presentations_df_pre.index.name
+        stimulus_index_df = stimulus_presentations_df_pre.reset_index().merge(stimulus_metadata_df.reset_index(), on=['image_name']).set_index(idx_name)
+        stimulus_index_df.sort_index(inplace=True)
+        stimulus_index_df = stimulus_index_df[['image_set', 'image_index', 'start_time']].rename(columns={'start_time': 'timestamps'})
+        stimulus_index_df.set_index('timestamps', inplace=True, drop=True)
+        stimulus_presentations_df = stimulus_presentations_df_pre.merge(stimulus_index_df, left_on='start_time', right_index=True, how='left')
+        assert len(stimulus_presentations_df_pre) == len(stimulus_presentations_df)
+
+        return stimulus_presentations_df[sorted(stimulus_presentations_df.columns)]   
+
+class ExtendedPickleFileApi(PickleFileApi):
+    def __init__(self, behavior_session_id, extended_stimulus_presentations_df_path):
+        super().__init__(behavior_session_id)
+
+    def get_extended_stimulus_presentations_df(self):
+        return pd.read_hdf(self.extended_stimulus_presentations_df_path, key='df')
+
+    def get_stimulus_presentations(self):
+        stimulus_presentations = super().get_stimulus_presentations()
+        extended_stimulus_presentations = self.get_extended_stimulus_presentations()
+
+        extended_stimulus_presentations = extended_stimulus_presentations.drop(columns=['omitted'])
+        stimulus_presentations = stimulus_presentations.join(extended_stimulus_presentations)
+
+        # Reorder the columns returned to make more sense to students
+        stimulus_presentations = stimulus_presentations[[
+            'image_name',
+            'image_index',
+            'start_time',
+            'stop_time',
+            'omitted',
+            'change',
+            'duration',
+            'licks',
+            'rewards',
+            'running_speed',
+            'index',
+            'time_from_last_lick',
+            'time_from_last_reward',
+            'time_from_last_change',
+            'block_index',
+            'image_block_repetition',
+            'repeat_within_block',
+            'image_set'
+        ]]
+
+        # Rename some columns to make more sense to students
+        stimulus_presentations = stimulus_presentations.rename(
+            columns={'index': 'absolute_flash_number',
+                     'running_speed': 'mean_running_speed'})
+        # Replace image set with A/B
+        stimulus_presentations['image_set'] = self.get_task_parameters()['stage'][15]
+        # Change index name for easier merge with flash_response_df
+        stimulus_presentations.index.rename('flash_id', inplace=True)
+        return stimulus_presentations
+
 
 if __name__ == "__main__":
     cache = BehaviorProjectCache(cache_path_example)
