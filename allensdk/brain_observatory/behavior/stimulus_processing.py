@@ -29,6 +29,8 @@ def load_pickle(pstream):
 def get_stimulus_presentations(data, stimulus_timestamps):
 
     stimulus_table = get_visual_stimuli_df(data, stimulus_timestamps)
+    stimulus_table['frame'] = stimulus_table['frame'].astype(int)
+    stimulus_table['end_frame'] = stimulus_table['end_frame'].astype(int)
     # workaround to rename columns to harmonize with visual coding and rebase timestamps to sync time
     stimulus_table.insert(loc=0, column='flash_number', value=np.arange(0, len(stimulus_table)))
     stimulus_table = stimulus_table.rename(columns={'frame': 'start_frame', 'time': 'start_time', 'flash_number':'stimulus_presentations_id'})
