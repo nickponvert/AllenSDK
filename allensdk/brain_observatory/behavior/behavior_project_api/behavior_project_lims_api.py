@@ -46,9 +46,10 @@ class BehaviorProjectLimsApi(BehaviorProjectApi):
     def get_sessions(
         self,
         container_ids=None,
-        container_workflow_states=("container_qc","postprocessing","complete"),
-        project_names=("Visual Behavior production",),
-        reporter_lines=('Ai148(TIT2L-GC6f-ICL-tTA2)', 'Ai93(TITL-GCaMP6f)',),
+        container_workflow_states=("holding","container_qc","postprocessing","complete"),
+        project_codes=("VisualBehavior","VisualBehaviorMultiscope",),
+        reporter_lines=("Ai148(TIT2L-GC6f-ICL-tTA2)", "Ai93(TITL-GCaMP6f)",),
+        equipment_names-("CAM2P.3","CAM2P.4","CAM2P.5","MESO.1",),
         filter_failed_experiments=True,
         **kwargs
     ):
@@ -64,6 +65,7 @@ class BehaviorProjectLimsApi(BehaviorProjectApi):
                 vbc.workflow_state as container_workflow_state,
                 oe.workflow_state as experiment_workflow_state,
                 os.date_of_acquisition,
+                os.id as ophys_session_id,
                 d.full_genotype as full_genotype,
                 rl.reporter_line,
                 dl.driver_line,
@@ -74,7 +76,7 @@ class BehaviorProjectLimsApi(BehaviorProjectApi):
                 os.name as session_name,
                 os.foraging_id,
                 equipment.name as equipment_name,
-                pr.name as project_name
+                pr.code as project_code
 
                 FROM ophys_experiments_visual_behavior_experiment_containers oec
                 JOIN visual_behavior_experiment_containers vbc 
@@ -106,22 +108,24 @@ class BehaviorProjectLimsApi(BehaviorProjectApi):
                 ) dl ON dl.donor_id = d.id
 
                 JOIN genders ON genders.id = d.gender_id
-                JOIN imaging_depths id ON id.id=os.imaging_depth_id
+                LEFT JOIN imaging_depths id ON id.id=os.imaging_depth_id
                 JOIN structures st ON st.id=oe.targeted_structure_id
                 JOIN equipment ON equipment.id=os.equipment_id
 
                 WHERE TRUE
                 {{pm.optional_contains('oec.visual_behavior_experiment_container_id', container_ids) -}}
+                {{pm.optional_contains('pr.code', project_codes, True) -}}
                 {{pm.optional_contains('vbc.workflow_state', container_workflow_states, True) -}}
-                {{pm.optional_contains('pr.name', project_names, True) -}}
                 {{pm.optional_contains('rl.reporter_line', reporter_lines, True) -}}
+                {{pm.optional_contains('equipment.name', equipment_names, True) -}}
             """,
             base=postgres_macros(),
             engine=self.postgres_engine.select,
             container_ids=container_ids,
             container_workflow_states=container_workflow_states,
             reporter_lines=reporter_lines,
-            project_names=project_names,
+            project_codes=project_codes,
+            equipment_names=equipment_names,
         )
 
         # Need to get the mtrain stage for each recording session
