@@ -87,9 +87,10 @@ class Dataset(object):
     """
 
 
-    FRAME_KEYS = ('frames', 'stim_vsync')
+    FRAME_KEYS = ('frames', 'stim_vsync', )
     PHOTODIODE_KEYS = ('photodiode', 'stim_photodiode')
     OPTOGENETIC_STIMULATION_KEYS = ("LED_sync", "opto_trial")
+
 
 
     def __init__(self, path):
