@@ -8,6 +8,7 @@ from allensdk.brain_observatory.behavior.behavior_project_api.behavior_project_l
 from allensdk.brain_observatory.behavior.behavior_ophys_api.behavior_ophys_nwb_api import BehaviorOphysNwbApi, ExtendedBehaviorOphysNwbApi
 from allensdk.brain_observatory.behavior.behavior_ophys_session import BehaviorOphysSession, ExtendedBehaviorOphysSession
 from allensdk.internal.api.behavior_ophys_api import BehaviorOphysLimsApi
+from allensdk.internal.api.behavior_pickle_file_api import PickleFileApi
 from allensdk.brain_observatory.mesoscope import mesoscope_session as meso
 
 csv_io = {
@@ -180,8 +181,9 @@ class InternalCacheFromLims(BehaviorProjectCache):
         return session
 
     def get_behavior_only_session(behavior_session_id):
-        pass
-
+        api = PickleFileApi(behavior_session_id)
+        session = BehaviorOphysSession(api)
+        return session
 
     def get_all_behavior_sessions(donor_id,
                                   exclude_imaging_sessions = False,
