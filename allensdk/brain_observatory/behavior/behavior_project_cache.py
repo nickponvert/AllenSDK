@@ -1,6 +1,7 @@
 import pandas as pd
 from functools import partial
 from allensdk.api.cache import Cache
+from allensdk.internal.api import PostgresQueryMixin
 from allensdk.brain_observatory.ecephys.ecephys_project_cache import call_caching
 from allensdk.brain_observatory.ecephys.file_promise import write_from_stream
 from allensdk.brain_observatory.behavior.behavior_project_api.behavior_project_fixed_api import BehaviorProjectFixedApi
@@ -180,12 +181,13 @@ class InternalCacheFromLims(BehaviorProjectCache):
 
         return session
 
-    def get_behavior_only_session(behavior_session_id):
+    def get_behavior_only_session(self, behavior_session_id):
         api = PickleFileApi(behavior_session_id)
         session = BehaviorOphysSession(api)
         return session
 
-    def get_all_behavior_sessions(donor_id,
+    def get_all_behavior_sessions(self,
+                                  donor_id,
                                   exclude_imaging_sessions = False,
                                   imaging_rigs = ['CAM2P.3', 'CAM2P.4', 'CAM2P.5']):
         postgres_api = PostgresQueryMixin()
@@ -225,5 +227,40 @@ class InternalCacheFromLims(BehaviorProjectCache):
         return all_sessions
 
 if __name__=="__main__":
+    import time
+    t1 = time.time()
     cache = InternalCacheFromLims()
+    t2 = time.time()
+    print("Initialized cache in {} sec".format(t2-t1))
+    sessions = cache.get_sessions()
+    t3 = time.time()
+    print("Executed manifest query in {} sec".format(t3-t2))
+    osid = sessions.iloc[0]['ophys_session_id']
+    session = cache.get_session(osid)
+    t4 = time.time()
+    print("Loaded session in {} sec".format(t4-t3))
+    d = sessions.iloc[0]['donor_id']
+    bsessions = cache.get_all_behavior_sessions(d)
+    t5 = time.time()
+    print("Executed behavior session query in {} sec".format(t5-t4))
+    bsid = bsessions.iloc[0]['behavior_session_id']
+    bsession = cache.get_behavior_only_session(bsid)
+    t6 = time.time()
+    print("Loaded behavior only session in {} sec".format(t6-t5))
+    t7 = time.time()
+    trial_response = session.trial_response_df
+    t8 = time.time()
+    print("Calculated trial response df in {} sec".format(t8-t7))
+
+    t9 = time.time()
+    stimulus_response = session.stimulus_response_df
+    t10 = time.time()
+    print("Calculated trial response df in {} sec".format(t10-t9))
+
+
+
+
+
+
+
 

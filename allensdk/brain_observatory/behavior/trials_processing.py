@@ -299,13 +299,14 @@ def get_trial_image_names(trial, stimuli):
 
 
 def get_trials(data, licks_df, rewards_df, stimulus_presentations_df, rebase):
-    assert rewards_df.index.name == 'timestamps'
+    #  assert rewards_df.index.name == 'timestamps'
     stimuli = data["items"]["behavior"]["stimuli"]
     trial_log = data["items"]["behavior"]["trial_log"]
 
     all_trial_data = [None] * len(trial_log)
-    sync_lick_times = licks_df.time.values 
-    rebased_reward_times = rewards_df.index.values
+    sync_lick_times = licks_df['timestamps'].values 
+    #  rebased_reward_times = rewards_df.index.values
+    rebased_reward_times = rewards_df['timestamps'].values
 
     for idx, trial in enumerate(trial_log):
         # extract rebased time and frame for each event in the trial log:

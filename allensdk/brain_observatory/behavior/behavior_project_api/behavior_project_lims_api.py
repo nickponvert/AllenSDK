@@ -49,7 +49,7 @@ class BehaviorProjectLimsApi(BehaviorProjectApi):
         container_workflow_states=("holding","container_qc","postprocessing","complete"),
         project_codes=("VisualBehavior","VisualBehaviorMultiscope",),
         reporter_lines=("Ai148(TIT2L-GC6f-ICL-tTA2)", "Ai93(TITL-GCaMP6f)",),
-        equipment_names-("CAM2P.3","CAM2P.4","CAM2P.5","MESO.1",),
+        equipment_names=("CAM2P.3","CAM2P.4","CAM2P.5","MESO.1",),
         filter_failed_experiments=True,
         **kwargs
     ):

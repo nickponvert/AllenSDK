@@ -8,13 +8,6 @@ from scipy import stats
 import itertools
 import xarray as xr
 
-from allensdk.brain_observatory.behavior.behavior_ophys_session import BehaviorOphysSession
-from allensdk.brain_observatory.behavior.behavior_ophys_api.behavior_ophys_nwb_api import BehaviorOphysNwbApi
-from allensdk.internal.api.behavior_ophys_api import BehaviorOphysLimsApi
-
-from allensdk.brain_observatory.behavior import behavior_project_cache as bpc
-from allensdk.brain_observatory.behavior.swdb.analysis_tools import get_nearest_frame, get_trace_around_timepoint, get_mean_in_window
-
 OPHYS_FRAME_RATE = 31.
 
 trial_response_params = {
@@ -81,7 +74,7 @@ def trial_response_df(session, response_analysis_params=trial_response_params):
     )
     return result
 
-def flash_response_df(session, response_analysis_params=flash_response_params):
+def stimulus_response_df(session, response_analysis_params=flash_response_params):
     dff_traces_arr = np.stack(session.dff_traces['dff'].values)
     event_times = session.stimulus_presentations['start_time'].values
     event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)

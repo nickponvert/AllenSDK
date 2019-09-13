@@ -18,6 +18,7 @@ from allensdk.brain_observatory.behavior.image_api import ImageApi
 from allensdk.internal.api import PostgresQueryMixin
 from allensdk.brain_observatory.behavior.behavior_ophys_api import BehaviorOphysApiBase
 from allensdk.brain_observatory.behavior.trials_processing import get_extended_trials
+from allensdk.brain_observatory.behavior.trials_processing import calculate_reward_rate
 from allensdk.internal.core.lims_utilities import safe_system_path
 
 
@@ -242,7 +243,7 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
             starttime=trial_df.start_time,
             window=.75,
             trial_window=25,
-            initial_trial_df=10
+            initial_trials=10
         )
 
         # Response_binary is just whether or not they responded - e.g. true for hit or FA. 
