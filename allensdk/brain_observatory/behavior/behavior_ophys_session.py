@@ -13,6 +13,7 @@ from allensdk.brain_observatory.behavior.trials_processing import calculate_rewa
 from allensdk.brain_observatory.behavior.dprime import get_rolling_dprime, get_trial_count_corrected_false_alarm_rate, get_trial_count_corrected_hit_rate
 from allensdk.brain_observatory.behavior.dprime import get_hit_rate, get_false_alarm_rate
 from allensdk.brain_observatory.behavior.image_api import Image, ImageApi
+from allensdk.brain_observatory.behavior import response_processing
 
 
 class BehaviorOphysSession(LazyPropertyMixin):
@@ -93,6 +94,11 @@ class BehaviorOphysSession(LazyPropertyMixin):
         self.average_projection = LazyProperty(self.get_average_projection)
         self.motion_correction = LazyProperty(self.api.get_motion_correction)
         self.segmentation_mask_image = LazyProperty(self.get_segmentation_mask_image)
+        self.image_index = LazyProperty(self.api.get_image_index_names)
+        self.roi_masks = LazyProperty(self.get_roi_masks)
+
+        self.trial_response_df = LazyProperty(self.get_trial_response_df)
+        self.stimulus_response_df = LazyProperty(self.get_stimulus_response_df)
 
     def get_roi_masks(self, cell_specimen_ids=None):
         """ Obtains boolean masks indicating the location of one or more cell's ROIs in this session.
@@ -340,6 +346,43 @@ class BehaviorOphysSession(LazyPropertyMixin):
 
         return performance_metrics
 
+    def get_trial_response_df(
+        self, 
+        response_analysis_params = {
+            "window_around_timepoint_seconds":[-4, 8],
+            "response_window_duration_seconds":0.5,
+            "baseline_window_duration_seconds":0.5
+        }
+    ):
+        trial_response_xr = response_processing.trial_response_df(self, response_analysis_params)
+
+        # TODO: some additional processing here to do the stats and break things out into a dataframe
+        return trial_response_xr
+
+    def get_stimulus_response_df(
+        self, 
+        response_analysis_params = {
+            "window_around_timepoint_seconds":[-0.5, 0.75],
+            "response_window_duration_seconds":0.5,
+            "baseline_window_duration_seconds":0.5
+        }
+    ):
+        stimulus_response_xr = response_processing.stimulus_response_df(self, response_analysis_params)
+
+        # TODO: some additional processing here to do the stats and break things out into a dataframe
+        return stimulus_response_xr
+
+    def get_roi_masks(self):
+        masks = super(ExtendedBehaviorOphysSession, self).get_roi_masks()
+        return {
+            cell_specimen_id: masks.loc[{"cell_specimen_id": cell_specimen_id}].data
+            for cell_specimen_id in masks["cell_specimen_id"].data
+        }
+
+    def get_segmentation_mask_image(self):
+        masks = self.roi_masks
+        return np.any([submask for submask in masks.values()], axis=0)
+
 
 def _translate_roi_mask(mask, row_offset, col_offset):
     return np.roll(
@@ -400,21 +443,6 @@ class ExtendedBehaviorOphysSession(BehaviorOphysSession):
         super(ExtendedBehaviorOphysSession, self).__init__(api)
         self.api = api
 
-        self.trial_response_df = LazyProperty(self.api.get_trial_response_df)
-        self.flash_response_df = LazyProperty(self.api.get_flash_response_df)
-        self.image_index = LazyProperty(self.api.get_image_index_names)
-        self.roi_masks = LazyProperty(self.get_roi_masks)
-
-    def get_roi_masks(self):
-        masks = super(ExtendedBehaviorOphysSession, self).get_roi_masks()
-        return {
-            cell_specimen_id: masks.loc[{"cell_specimen_id": cell_specimen_id}].data
-            for cell_specimen_id in masks["cell_specimen_id"].data
-        }
-
-    def get_segmentation_mask_image(self):
-        masks = self.roi_masks
-        return np.any([submask for submask in masks.values()], axis=0)
 
 if __name__ == "__main__":
 
