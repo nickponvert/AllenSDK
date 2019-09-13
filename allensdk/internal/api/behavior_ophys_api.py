@@ -106,6 +106,17 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         metadata['full_genotype'] = self.get_full_genotype()
         metadata['behavior_session_uuid'] = uuid.UUID(self.get_behavior_session_uuid())
 
+
+        # We want stage name in metadata for easy access by the students
+        task_parameters = self.get_task_parameters()
+        metadata['stage'] = task_parameters['stage']
+
+        # metadata should not include 'session_type' because it is 'Unknown'
+        metadata.pop('session_type')
+
+        # Rename LabTracks_ID to mouse_id to reduce student confusion
+        metadata['mouse_id'] = metadata.pop('LabTracks_ID')
+
         return metadata
 
     @memoize
@@ -129,8 +140,8 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
     def get_running_speed(self):
         running_data_df = self.get_running_data_df()
         assert running_data_df.index.name == 'timestamps'
-        return RunningSpeed(timestamps=running_data_df.index.values,
-                            values=running_data_df.speed.values)
+        running_speed = running_data_df.reset_index()[['timestamps', 'speed']]
+        return running_speed
 
     @memoize
     def get_stimulus_presentations(self):
@@ -156,22 +167,41 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         return get_stimulus_templates(data)
 
     @memoize
+    def get_image_index_names(self):
+        image_index_names = self.get_stimulus_presentations().groupby('image_index').apply(
+            lambda group: one(group['image_name'].unique())
+        )
+        return image_index_names
+
+    @memoize
     def get_licks(self):
         lick_times = self.get_sync_data()['lick_times']
-        return pd.DataFrame({'time': lick_times})
+        return pd.DataFrame({'timestamps': lick_times})
 
     @memoize
     def get_rewards(self):
         behavior_stimulus_file = self.get_behavior_stimulus_file()
         data = pd.read_pickle(behavior_stimulus_file)
         rebase_function = self.get_stimulus_rebase_function()
-        return get_rewards(data, rebase_function)
+        rewards = get_rewards(data, rebase_function)
+        rewards = rewards.reset_index()
+        return rewards
 
     @memoize
     def get_task_parameters(self):
         behavior_stimulus_file = self.get_behavior_stimulus_file()
         data = pd.read_pickle(behavior_stimulus_file)
-        return get_task_parameters(data)
+        task_parameters =  get_task_parameters(data)
+
+        #  The task parameters are incorrect.
+        #  See: https://github.com/AllenInstitute/AllenSDK/issues/637
+        #  We need to hard-code the omitted flash fraction and stimulus duration here. 
+        task_parameters['omitted_flash_fraction'] = 0.05
+        task_parameters['stimulus_duration_sec'] = 0.25
+        task_parameters['blank_duration_sec'] = 0.5
+        task_parameters.pop('task')
+
+        return task_parameters
 
     @memoize
     def get_trials(self):
@@ -183,6 +213,42 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         stimulus_presentations = self.get_stimulus_presentations()
         rebase_function = self.get_stimulus_rebase_function()
         trial_df = get_trials(data, licks, rewards, stimulus_presentations, rebase_function)
+
+
+        trial_df = trial_df[[
+            'initial_image_name',
+            'change_image_name',
+            'change_time',
+            'lick_times',
+            'response_latency',
+            'reward_time',
+            'go',
+            'catch',
+            'hit',
+            'miss',
+            'false_alarm',
+            'correct_reject',
+            'aborted',
+            'auto_rewarded',
+            'reward_volume',
+            'start_time',
+            'stop_time',
+            'trial_length'
+        ]]
+
+        # Calculate reward rate per trial
+        trial_df['reward_rate'] = calculate_reward_rate(
+            response_latency=trial_df.response_latency,
+            starttime=trial_df.start_time,
+            window=.75,
+            trial_window=25,
+            initial_trial_df=10
+        )
+
+        # Response_binary is just whether or not they responded - e.g. true for hit or FA. 
+        hit = trial_df['hit'].values
+        fa = trial_df['false_alarm'].values
+        trial_df['response_binary'] = np.logical_or(hit, fa)
 
         return trial_df
 
