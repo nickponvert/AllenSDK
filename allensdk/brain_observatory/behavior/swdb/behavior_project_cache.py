@@ -5,6 +5,7 @@ import json
 import re
 
 from allensdk import one
+from allensdk.internal.api import PostgresQueryMixin
 from allensdk.brain_observatory.behavior.behavior_ophys_api.behavior_ophys_nwb_api import BehaviorOphysNwbApi
 from allensdk.brain_observatory.behavior.behavior_ophys_session import BehaviorOphysSession
 from allensdk.core.lazy_property import LazyProperty

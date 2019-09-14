@@ -238,8 +238,7 @@ if __name__=="__main__":
     osid = sessions.iloc[0]['ophys_session_id']
     session = cache.get_session(osid)
     t4 = time.time()
-    print("Loaded session in {} sec".format(t4-t3))
-    d = sessions.iloc[0]['donor_id']
+    print("Loaded session in {} sec".format(t4-t3)) d = sessions.iloc[0]['donor_id']
     bsessions = cache.get_all_behavior_sessions(d, exclude_imaging_sessions=True)
     t5 = time.time()
     print("Executed behavior session query in {} sec".format(t5-t4))
@@ -256,11 +255,3 @@ if __name__=="__main__":
     stimulus_response = session.stimulus_response_df
     t10 = time.time()
     print("Calculated trial response df in {} sec".format(t10-t9))
-
-
-
-
-
-
-
-
