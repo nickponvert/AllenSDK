@@ -13,13 +13,13 @@ OPHYS_FRAME_RATE = 31.
 trial_response_params = {
     "window_around_timepoint_seconds":[-4, 8],
     "response_window_duration_seconds":0.5,
-    "baseline_window_duration_seconds":0.5
+    "baseline_window_duration_seconds":0.25
 }
 
 flash_response_params = {
     "window_around_timepoint_seconds":[-0.5, 0.75],
     "response_window_duration_seconds":0.5,
-    "baseline_window_duration_seconds":0.5
+    "baseline_window_duration_seconds":0.25
 }
 
 def index_of_nearest_value(sample_times, event_times): 
