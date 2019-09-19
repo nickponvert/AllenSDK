@@ -71,17 +71,18 @@ class BehaviorOphysSession(LazyPropertyMixin):
         api_kwargs["filter_invalid_rois"] = api_kwargs.get("filter_invalid_rois", True)
         return cls(api=BehaviorOphysNwbApi.from_path(path=nwb_path, **api_kwargs))
 
-    def __init__(self, api=None):
+    def __init__(self, api=None, filter_invalid_rois=True):
 
         self.api = api
+        self.filter_invalid_rois = filter_invalid_rois
 
         self.ophys_experiment_id = LazyProperty(self.api.get_ophys_experiment_id)
         self.max_projection = LazyProperty(self.get_max_projection)
         self.stimulus_timestamps = LazyProperty(self.api.get_stimulus_timestamps)
         self.ophys_timestamps = LazyProperty(self.api.get_ophys_timestamps)
         self.metadata = LazyProperty(self.api.get_metadata)
-        self.dff_traces = LazyProperty(self.api.get_dff_traces)
-        self.cell_specimen_table = LazyProperty(self.api.get_cell_specimen_table)
+        self.dff_traces = LazyProperty(self.get_dff_traces)
+        self.cell_specimen_table = LazyProperty(self.get_cell_specimen_table)
         self.running_speed = LazyProperty(self.api.get_running_speed)
         self.running_data_df = LazyProperty(self.api.get_running_data_df)
         self.stimulus_presentations = LazyProperty(self.api.get_stimulus_presentations)
@@ -196,32 +197,32 @@ class BehaviorOphysSession(LazyPropertyMixin):
             }
         ).squeeze(drop=True)
 
-    @legacy('Consider using "dff_traces" instead.')
-    def get_dff_traces(self, cell_specimen_ids=None):
+    #  @legacy('Consider using "dff_traces" instead.')
+    #  def get_dff_traces(self, cell_specimen_ids=None):
+    #  
+    #      if cell_specimen_ids is None:
+    #          cell_specimen_ids = self.get_cell_specimen_ids()
+    #  
+    #      csid_table = self.cell_specimen_table.reset_index()[['cell_specimen_id']]
+    #      csid_subtable = csid_table[csid_table['cell_specimen_id'].isin(cell_specimen_ids)].set_index('cell_specimen_id')
+    #      dff_table = csid_subtable.join(self.dff_traces, how='left')
+    #      dff_traces = np.vstack(dff_table['dff'].values)
+    #      timestamps = self.ophys_timestamps
+    #  
+    #      assert (len(cell_specimen_ids), len(timestamps)) == dff_traces.shape
+    #      return timestamps, dff_traces
 
-        if cell_specimen_ids is None:
-            cell_specimen_ids = self.get_cell_specimen_ids()
+    #  @legacy()
+    #  def get_cell_specimen_indices(self, cell_specimen_ids):
+    #      return [self.cell_specimen_table.index.get_loc(csid) for csid in cell_specimen_ids]
 
-        csid_table = self.cell_specimen_table.reset_index()[['cell_specimen_id']]
-        csid_subtable = csid_table[csid_table['cell_specimen_id'].isin(cell_specimen_ids)].set_index('cell_specimen_id')
-        dff_table = csid_subtable.join(self.dff_traces, how='left')
-        dff_traces = np.vstack(dff_table['dff'].values)
-        timestamps = self.ophys_timestamps
-
-        assert (len(cell_specimen_ids), len(timestamps)) == dff_traces.shape
-        return timestamps, dff_traces
-
-    @legacy()
-    def get_cell_specimen_indices(self, cell_specimen_ids):
-        return [self.cell_specimen_table.index.get_loc(csid) for csid in cell_specimen_ids]
-
-    @legacy('Consider using "cell_specimen_table[\'cell_specimen_id\']" instead.')
-    def get_cell_specimen_ids(self):
-        cell_specimen_ids = self.cell_specimen_table.index.values
-
-        if np.isnan(cell_specimen_ids.astype(float)).sum() == len(self.cell_specimen_table):
-            raise ValueError(f'cell_specimen_id values not assigned for {self.ophys_experiment_id}')
-        return cell_specimen_ids
+    #  @legacy('Consider using "cell_specimen_table[\'cell_specimen_id\']" instead.')
+    #  def get_cell_specimen_ids(self):
+    #      cell_specimen_ids = self.cell_specimen_table.index.values
+    #  
+    #      if np.isnan(cell_specimen_ids.astype(float)).sum() == len(self.cell_specimen_table):
+    #          raise ValueError(f'cell_specimen_id values not assigned for {self.ophys_experiment_id}')
+    #      return cell_specimen_ids
 
     def deserialize_image(self, sitk_image):
         '''
@@ -347,6 +348,18 @@ class BehaviorOphysSession(LazyPropertyMixin):
         performance_metrics['max_dprime_engaged'] = rolling_performance_df['rolling_dprime'][engaged_trial_mask].max()
 
         return performance_metrics
+
+    def get_cell_specimen_table(self):
+        cell_specimen_table = self.api.get_cell_specimen_table()
+        if self.filter_invalid_rois:
+            cell_specimen_table = cell_specimen_table[cell_specimen_table['valid_roi']]
+        return cell_specimen_table
+
+    def get_dff_traces(self):
+        dff_traces = self.api.get_dff_traces()
+        # Only return dff traces for cells in the specimen table (might be filtering out invalid rois there)
+        dff_traces = dff_traces[np.isin(dff_traces['cell_roi_id'].values, self.cell_specimen_table['cell_roi_id'].values)]
+        return dff_traces
 
     def get_trial_response_xr(
         self, 
