@@ -137,7 +137,7 @@ class InternalCacheFromLims(BehaviorProjectCache):
     #      '''
     #      return self.fetch_api.get_sessions(**get_sessions_kwargs)
     
-    def get_session(self, ophys_session_id, filter_invalid_rois=True):
+    def get_session(self, ophys_session_id):
         # Return regular session from lims if scientifica, otherwise return mesoscope session
         experiment_table = self.get_sessions() #Actually returns experiments
         experiments_this_session_id = experiment_table.query("ophys_session_id == @ophys_session_id")
@@ -150,7 +150,7 @@ class InternalCacheFromLims(BehaviorProjectCache):
             if equipment_name in self.SCIENTIFICA_RIG_NAMES:
                 assert len(experiments_this_session_id)==1
                 ophys_experiment_id = experiments_this_session_id.iloc[0]['ophys_experiment_id']
-                api = BehaviorOphysLimsApi(ophys_experiment_id, filter_invalid_rois=filter_invalid_rois)
+                api = BehaviorOphysLimsApi(ophys_experiment_id)
                 session = BehaviorOphysSession(api)
 
             elif equipment_name in self.MESOSCOPE_RIG_NAMES:
