@@ -15,7 +15,8 @@ from allensdk.internal.core.lims_utilities import safe_system_path
 
 class OphysLimsApi(PostgresQueryMixin):
 
-    def __init__(self, ophys_experiment_id):
+    def __init__(self, ophys_experiment_id, **kwargs):
+        self.filter_invalid_rois = kwargs.pop("filter_invalid_rois", False)
         self.ophys_experiment_id = ophys_experiment_id
         super().__init__()
 
@@ -347,6 +348,8 @@ class OphysLimsApi(PostgresQueryMixin):
         cell_specimen_table.index.rename('cell_roi_id', inplace=True)
         cell_specimen_table.reset_index(inplace=True)
         cell_specimen_table.set_index('cell_specimen_id', inplace=True)
+        if self.filter_invalid_rois:
+            cell_specimen_table = cell_specimen_table[cell_specimen_table['valid_roi']]
         return cell_specimen_table
 
     @memoize

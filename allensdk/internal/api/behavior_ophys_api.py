@@ -26,8 +26,8 @@ from allensdk.internal.core.lims_utilities import safe_system_path
 
 class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
 
-    def __init__(self, ophys_experiment_id):
-        super().__init__(ophys_experiment_id)
+    def __init__(self, ophys_experiment_id, **kwargs):
+        super().__init__(ophys_experiment_id, **kwargs)
 
     @memoize
     def get_sync_data(self):
