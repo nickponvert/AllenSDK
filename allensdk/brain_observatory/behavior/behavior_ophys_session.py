@@ -97,6 +97,8 @@ class BehaviorOphysSession(LazyPropertyMixin):
         self.image_index = LazyProperty(self.api.get_image_index_names)
         self.roi_masks = LazyProperty(self.get_roi_masks)
 
+        self.trial_response_xr = LazyProperty(self.get_trial_response_xr)
+        self.stimulus_response_xr = LazyProperty(self.get_stimulus_response_xr)
         self.trial_response_df = LazyProperty(self.get_trial_response_df)
         self.stimulus_response_df = LazyProperty(self.get_stimulus_response_df)
 
@@ -346,7 +348,7 @@ class BehaviorOphysSession(LazyPropertyMixin):
 
         return performance_metrics
 
-    def get_trial_response_df(
+    def get_trial_response_xr(
         self, 
         response_analysis_params = {
             "window_around_timepoint_seconds":[-4, 8],
@@ -354,12 +356,13 @@ class BehaviorOphysSession(LazyPropertyMixin):
             "baseline_window_duration_seconds":0.5
         }
     ):
-        trial_response_xr = response_processing.trial_response_df(self, response_analysis_params)
-
-        # TODO: some additional processing here to do the stats and break things out into a dataframe
+        trial_response_xr = response_processing.trial_response_xr(self, response_analysis_params)
         return trial_response_xr
 
-    def get_stimulus_response_df(
+    def get_trial_response_df(self):
+        return response_processing.trial_response_df(self.trial_response_xr)
+
+    def get_stimulus_response_xr(
         self, 
         response_analysis_params = {
             "window_around_timepoint_seconds":[-0.5, 0.75],
@@ -367,10 +370,11 @@ class BehaviorOphysSession(LazyPropertyMixin):
             "baseline_window_duration_seconds":0.5
         }
     ):
-        stimulus_response_xr = response_processing.stimulus_response_df(self, response_analysis_params)
-
-        # TODO: some additional processing here to do the stats and break things out into a dataframe
+        stimulus_response_xr = response_processing.stimulus_response_xr(self, response_analysis_params)
         return stimulus_response_xr
+
+    def get_stimulus_response_df(self):
+        return response_processing.stimulus_response_df(self.stimulus_response_xr)
 
     def get_roi_masks(self):
         masks = super(ExtendedBehaviorOphysSession, self).get_roi_masks()
