@@ -5,6 +5,7 @@ import pandas as pd
 import uuid
 import json
 
+from allensdk import one
 from allensdk.api.cache import memoize
 from allensdk.internal.api.ophys_lims_api import OphysLimsApi
 from allensdk.brain_observatory.behavior.sync import get_sync_data, get_stimulus_rebase_function
