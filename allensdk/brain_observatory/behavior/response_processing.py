@@ -10,17 +10,41 @@ import xarray as xr
 
 OPHYS_FRAME_RATE = 31.
 
-trial_response_params = {
-    "window_around_timepoint_seconds":[-4, 8],
-    "response_window_duration_seconds":0.5,
-    "baseline_window_duration_seconds":0.25
-}
+def get_default_trial_response_params():
+    '''
+        Get default parameters for computing trial_response_xr
+        including the window around each change_time to take a snippet of the dF/F trace for each cell,
+        the duration of time after each change to take the mean_response,
+        and the duration of time before each change to take the baseline_response.
+        Args:
+            None
+        Returns
+            (dict) dict of response window params for computing trial_response_xr
+        '''
+    trial_response_params = {
+        "window_around_timepoint_seconds":[-4, 8],
+        "response_window_duration_seconds":0.5,
+        "baseline_window_duration_seconds":0.25
+    }
+    return trial_response_params
 
-flash_response_params = {
-    "window_around_timepoint_seconds":[-0.5, 0.75],
-    "response_window_duration_seconds":0.5,
-    "baseline_window_duration_seconds":0.25
-}
+def get_default_stimulus_response_params():
+    '''
+        Get default parameters for computing stimulus_response_xr
+        including the window around each stimulus presentation start_time to take a snippet of the dF/F trace for each cell,
+        the duration of time after each start_time to take the mean_response,
+        and the duration of time before each start_time to take the baseline_response.
+        Args:
+            None
+        Returns
+            (dict) dict of response window params for computing stimulus_response_xr
+        '''
+    stimulus_response_params = {
+        "window_around_timepoint_seconds":[-0.5, 0.75],
+        "response_window_duration_seconds":0.5,
+        "baseline_window_duration_seconds":0.25
+    }
+    return stimulus_response_params
 
 def index_of_nearest_value(sample_times, event_times): 
     '''
@@ -70,7 +94,9 @@ def slice_inds_and_offsets(ophys_times, event_times, window_around_timepoint_sec
     trace_timebase = np.arange(start_ind_offset, end_ind_offset) / frame_rate
     return event_indices, start_ind_offset, end_ind_offset, trace_timebase
 
-def trial_response_xr(session, response_analysis_params=trial_response_params):
+def trial_response_xr(session, response_analysis_params=None):
+    if response_analysis_params is None:
+        response_analysis_params = get_default_trial_response_params()
 
     dff_traces_arr = np.stack(session.dff_traces['dff'].values)
     change_trials = session.trials[~pd.isnull(session.trials['change_time'])]
@@ -120,7 +146,10 @@ def trial_response_xr(session, response_analysis_params=trial_response_params):
 
     return result
 
-def stimulus_response_xr(session, response_analysis_params=flash_response_params):
+def stimulus_response_xr(session, response_analysis_params=None):
+    if response_analysis_params is None:
+        response_analysis_params = get_default_stimulus_response_params()
+
     dff_traces_arr = np.stack(session.dff_traces['dff'].values)
     event_times = session.stimulus_presentations['start_time'].values
     event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)
@@ -302,6 +331,9 @@ def get_p_value_from_shuffled_spontaneous(mean_responses,
                           coords = mean_responses.coords)
     return result
 
+def get_flash_response_df():
+    fdf = rp.stimulus_response_df(
+        rp.stimulus_response_xr(session, response_analysis_params=rp.get_default_flash_response_params()))
 
 if __name__=="__main__":
     import time
