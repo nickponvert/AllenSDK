@@ -22,7 +22,7 @@ flash_response_params = {
     "baseline_window_duration_seconds":0.5
 }
 
-def index_of_nearest_value(sample_times, event_times):
+def index_of_nearest_value(sample_times, event_times): 
     '''
     The index of the nearest sample time for each event time.
     Args: 
@@ -51,19 +51,39 @@ def eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_
     all_inds = event_indices + np.arange(start_ind_offset, end_ind_offset)[:,None] 
     sliced_dataout = dff_traces_arr.T[all_inds]
     return sliced_dataout
- 
-def trial_response_df(session, response_analysis_params=trial_response_params):
+
+def slice_inds_and_offsets(ophys_times, event_times, window_around_timepoint_seconds, frame_rate=None):
+    '''
+    Get nearest indices to event times, plus ind offsets for slicing out a window around the event from the trace.
+    Args:
+        ophys_times (np.array): timestamps of ophys frames
+        event_times (np.array): timestamps of events around which to slice windows
+        window_around_timepoint_seconds (list): [start_offset, end_offset] for window
+        frame_rate (float): we shouldn't need this. leave none to infer from the ophys timestamps
+    '''
+    if frame_rate is None:
+        frame_rate = 1/np.diff(ophys_times).mean()
+    event_indices = index_of_nearest_value(ophys_times, event_times)
+    trace_len = (window_around_timepoint_seconds[1] - window_around_timepoint_seconds[0]) * frame_rate
+    start_ind_offset = int(window_around_timepoint_seconds[0] * frame_rate)
+    end_ind_offset = int(start_ind_offset + trace_len)
+    trace_timebase = np.arange(start_ind_offset, end_ind_offset) / frame_rate
+    return event_indices, start_ind_offset, end_ind_offset, trace_timebase
+
+def trial_response_xr(session, response_analysis_params=trial_response_params):
+
     dff_traces_arr = np.stack(session.dff_traces['dff'].values)
     change_trials = session.trials[~pd.isnull(session.trials['change_time'])]
     event_times = change_trials['change_time'].values
-    event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)
-    window_around_timepoint_seconds = response_analysis_params['window_around_timepoint_seconds']
-    trace_len = (window_around_timepoint_seconds[1] - window_around_timepoint_seconds[0]) * OPHYS_FRAME_RATE
-    start_ind_offset = int(window_around_timepoint_seconds[0] * OPHYS_FRAME_RATE)
-    end_ind_offset = int(start_ind_offset + trace_len)
-    trace_timebase = np.arange(start_ind_offset, end_ind_offset) / OPHYS_FRAME_RATE
+
+    event_indices, start_ind_offset, end_ind_offset, trace_timebase = slice_inds_and_offsets(
+        ophys_times=session.ophys_timestamps,
+        event_times=event_times,
+        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds']
+    )
     sliced_dataout = eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_offset)
-    result = xr.DataArray(
+
+    eventlocked_traces_xr = xr.DataArray(
         data = sliced_dataout,
         dims = ("eventlocked_timestamps", "trials_id", "cell_specimen_id"),
         coords = {
@@ -72,19 +92,47 @@ def trial_response_df(session, response_analysis_params=trial_response_params):
             "cell_specimen_id": session.cell_specimen_table.index.values
         }
     )
+
+    response_range = [0, response_analysis_params['response_window_duration_seconds']]
+    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds']]
+
+    mean_response = eventlocked_traces_xr.loc[
+        {'eventlocked_timestamps':slice(*response_range)}
+    ].mean(['eventlocked_timestamps'])
+
+    mean_baseline = eventlocked_traces_xr.loc[
+        {'eventlocked_timestamps':slice(*baseline_range)}
+    ].mean(['eventlocked_timestamps'])
+
+
+    dff_traces_arr = np.stack(session.dff_traces['dff'].values)
+    p_values = get_p_value_from_shuffled_spontaneous(mean_response,
+                                                     session.stimulus_presentations,
+                                                     session.ophys_timestamps,
+                                                     dff_traces_arr,
+                                                     response_analysis_params['response_window_duration_seconds'])
+    result = xr.Dataset({
+        'eventlocked_traces':eventlocked_traces_xr,
+        'mean_response':mean_response,
+        'mean_baseline':mean_baseline,
+        'p_value': p_values
+    })
+
     return result
 
-def stimulus_response_df(session, response_analysis_params=flash_response_params):
+def stimulus_response_xr(session, response_analysis_params=flash_response_params):
     dff_traces_arr = np.stack(session.dff_traces['dff'].values)
     event_times = session.stimulus_presentations['start_time'].values
     event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)
-    window_around_timepoint_seconds = response_analysis_params['window_around_timepoint_seconds']
-    trace_len = (window_around_timepoint_seconds[1] - window_around_timepoint_seconds[0]) * OPHYS_FRAME_RATE
-    start_ind_offset = int(window_around_timepoint_seconds[0] * OPHYS_FRAME_RATE)
-    end_ind_offset = int(start_ind_offset + trace_len)
-    trace_timebase = np.arange(start_ind_offset, end_ind_offset) / OPHYS_FRAME_RATE
+
+    event_indices, start_ind_offset, end_ind_offset, trace_timebase = slice_inds_and_offsets(
+        ophys_times=session.ophys_timestamps,
+        event_times=event_times,
+        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds']
+    )
     sliced_dataout = eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_offset)
-    result = xr.DataArray(
+
+    eventlocked_traces_xr = xr.DataArray(
         data = sliced_dataout,
         dims = ("eventlocked_timestamps", "stimulus_presentations_id", "cell_specimen_id"),
         coords = {
@@ -93,19 +141,173 @@ def stimulus_response_df(session, response_analysis_params=flash_response_params
             "cell_specimen_id": session.cell_specimen_table.index.values
         }
     )
+
+    response_range = [0, response_analysis_params['response_window_duration_seconds']]
+    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds']]
+
+    mean_response = eventlocked_traces_xr.loc[
+        {'eventlocked_timestamps':slice(*response_range)}
+    ].mean(['eventlocked_timestamps'])
+
+    mean_baseline = eventlocked_traces_xr.loc[
+        {'eventlocked_timestamps':slice(*baseline_range)}
+    ].mean(['eventlocked_timestamps'])
+
+    dff_traces_arr = np.stack(session.dff_traces['dff'].values)
+    p_values = get_p_value_from_shuffled_spontaneous(mean_response,
+                                                     session.stimulus_presentations,
+                                                     session.ophys_timestamps,
+                                                     dff_traces_arr,
+                                                     response_analysis_params['response_window_duration_seconds'])
+    result = xr.Dataset({
+        'eventlocked_traces':eventlocked_traces_xr,
+        'mean_response':mean_response,
+        'mean_baseline':mean_baseline,
+        'p_value': p_values
+    })
+
     return result
 
-def mean_response(eventlocked_response_xr):
+def trial_response_df(trial_response_xr):
     '''
-    Calculate mean response and baseline for each neuron over events
+    Smash things into df format if you want.
     '''
-    #  response_window_duration_seconds = response_analysis_params['response_window_duration_seconds']
-    #  baseline_window_duration_seconds = response_analysis_params['baseline_window_duration_seconds']
-    pass
+    traces = trial_response_xr['eventlocked_traces']
+    mean_response = trial_response_xr['mean_response']
+    mean_baseline = trial_response_xr['mean_baseline']
+    p_vals = trial_response_xr['p_value']
+    stacked_traces = traces.stack(multi_index = ('trials_id', 'cell_specimen_id')).transpose()
+    stacked_response = mean_response.stack(multi_index = ('trials_id', 'cell_specimen_id')).transpose()
+    stacked_baseline = mean_baseline.stack(multi_index = ('trials_id', 'cell_specimen_id')).transpose()
+    stacked_pval = p_vals.stack(multi_index = ('trials_id', 'cell_specimen_id')).transpose()
+
+    num_repeats=len(stacked_traces)
+    trace_timestamps = np.repeat(
+        stacked_traces.coords['eventlocked_timestamps'].data[np.newaxis,:],
+        repeats=num_repeats, axis=0)
+
+    df = pd.DataFrame({
+        'trials_id': stacked_traces.coords['trials_id'],
+        'cell_specimen_id': stacked_traces.coords['cell_specimen_id'],
+        'dff_trace':list(stacked_traces.data),
+        'dff_trace_timestamps':list(trace_timestamps),
+        'mean_response': stacked_response.data,
+        'baseline_response': stacked_baseline.data,
+        'p_value': stacked_pval
+    })
+    return df
+
+def stimulus_response_df(stimulus_response_xr):
+    '''
+    Smash things into df format if you want.
+    '''
+    traces = stimulus_response_xr['eventlocked_traces']
+    mean_response = stimulus_response_xr['mean_response']
+    mean_baseline = stimulus_response_xr['mean_baseline']
+    p_vals = stimulus_response_xr['p_value']
+    stacked_traces = traces.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_response = mean_response.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_baseline = mean_baseline.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_pval = p_vals.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+                      
+    num_repeats=len(stacked_traces)
+    trace_timestamps = np.repeat(
+        stacked_traces.coords['eventlocked_timestamps'].data[np.newaxis,:],
+        repeats=num_repeats, axis=0)
+
+    df = pd.DataFrame({
+        'stimulus_presentations_id': stacked_traces.coords['stimulus_presentations_id'],
+        'cell_specimen_id': stacked_traces.coords['cell_specimen_id'],
+        'dff_trace':list(stacked_traces.data),
+        'dff_trace_timestamps':list(trace_timestamps),
+        'mean_response': stacked_response.data,
+        'baseline_response': stacked_baseline.data,
+        'p_value': stacked_pval
+    })
+    return df
+
+def get_spontaneous_frames(stimulus_presentations_df, ophys_timestamps):
+    '''
+        Returns a list of the frames that occur during the before and after spontaneous windows. This is copied from VBA. Does not use the full spontaneous period because that is what VBA did. It only uses 4 minutes of the before and after spontaneous period. 
+    
+    Args:
+        stimulus_presentations_df (pandas.DataFrame): table of stimulus presentations, including start_time and stop_time
+        ophys_timestamps (np.array): Timestamps of each ophys frame
+    Returns:
+        spontaneous_inds (np.array): indices of ophys frames during the spontaneous period
+    '''
+    # dont use full 5 mins to avoid fingerprint and countdown
+    # spont_duration_frames = 4 * 60 * 60  # 4 mins * * 60s/min * 60Hz
+    spont_duration = 4 * 60  # 4mins * 60sec
+
+    # for spontaneous at beginning of session
+    behavior_start_time = stimulus_presentations_df.iloc[0].start_time
+    spontaneous_start_time_pre = behavior_start_time - spont_duration
+    spontaneous_end_time_pre = behavior_start_time
+    spontaneous_start_frame_pre = index_of_nearest_value(ophys_timestamps, spontaneous_start_time_pre)
+    spontaneous_end_frame_pre = index_of_nearest_value(ophys_timestamps, spontaneous_end_time_pre)
+    spontaneous_frames_pre = np.arange(spontaneous_start_frame_pre, spontaneous_end_frame_pre, 1)
+
+    # for spontaneous epoch at end of session
+    behavior_end_time = stimulus_presentations_df.iloc[-1].stop_time
+    spontaneous_start_time_post = behavior_end_time + 0.5
+    spontaneous_end_time_post = spontaneous_start_time_post + spont_duration
+    spontaneous_start_frame_post = index_of_nearest_value(ophys_timestamps, spontaneous_start_time_post)
+    spontaneous_end_frame_post = index_of_nearest_value(ophys_timestamps, spontaneous_end_time_post)
+    spontaneous_frames_post = np.arange(spontaneous_start_frame_post, spontaneous_end_frame_post, 1)
+
+    spontaneous_frames = np.concatenate([spontaneous_frames_pre, spontaneous_frames_post])
+    return spontaneous_frames
+
+def get_p_value_from_shuffled_spontaneous(mean_responses,
+                                          stimulus_presentations_df,
+                                          ophys_timestamps,
+                                          dff_traces_arr,
+                                          response_window_duration,
+                                          ophys_frame_rate=None,
+                                          number_of_shuffles=10000):
+    '''
+    Args:
+        mean_responses (xarray.DataArray): Mean response values, shape (nConditions, nCells)
+        stimulus_presentations_df (pandas.DataFrame): Table of stimulus presentations, including start_time and stop_time
+        ophys_timestamps (np.array): Timestamps of each ophys frame
+        dff_traces_arr (np.array): Dff values, shape (nSamples, nCells)
+        response_window_duration (int): Number of frames averaged to produce mean response values
+        number_of_shuffles (int): Number of shuffles of spontaneous activity used to produce the p-value
+    Returns:
+        p_values (xarray.DataArray): p-value for each response mean, shape (nConditions, nCells)
+    '''
+
+    spontaneous_frames = get_spontaneous_frames(stimulus_presentations_df, ophys_timestamps)
+    shuffled_spont_inds = np.random.choice(spontaneous_frames, number_of_shuffles)
+
+    if ophys_frame_rate is None:
+        ophys_frame_rate = 1/np.diff(ophys_timestamps).mean()
+
+    trace_len = np.round(response_window_duration * ophys_frame_rate).astype(int)
+    start_ind_offset = 0
+    end_ind_offset = trace_len
+    spont_traces = eventlocked_traces(dff_traces_arr, shuffled_spont_inds, start_ind_offset, end_ind_offset)
+    spont_mean = spont_traces.mean(axis=0) #Returns (nShuffles, nCells)
+
+    # Goal is to figure out how each response compares to the shuffled distribution, which is just
+    # a searchsorted call if we first sort the shuffled.
+    spont_mean_sorted = np.sort(spont_mean, axis=0)
+    response_insertion_ind = np.empty(mean_responses.data.shape)
+    for ind_cell in range(mean_responses.data.shape[1]):
+        response_insertion_ind[:, ind_cell] = np.searchsorted(spont_mean_sorted[:, ind_cell], mean_responses.data[:, ind_cell])
+    
+    proportion_spont_larger_than_sample = 1 - (response_insertion_ind / number_of_shuffles)
+    result = xr.DataArray(data = proportion_spont_larger_than_sample,
+                          coords = mean_responses.coords)
+    return result
+
 
 if __name__=="__main__":
     import time
-    manifest_path = '/allen/programs/braintv/workgroups/nc-ophys/visual_behavior/SWDB_2019/behavior_project_manifest.json'
-    cache = bpc.BehaviorProjectCache.fixed(manifest=manifest_path)
-    session = cache.get_session_data(880961028)
-    result = trial_response_df(session)
+    from allensdk.brain_observatory.behavior import behavior_project_cache as bpc
+    manifest_path = '/allen/programs/braintv/workgroups/nc-ophys/visual_behavior/sfn_2019/manifest_20190916.json'
+    cache = bpc.InternalCacheFromLims(manifest=manifest_path)
+    session = cache.get_session(806203732)
+    trial_response_xr = trial_response_xr(session)
+    #  result = trial_response_df(trial_response_xr)
