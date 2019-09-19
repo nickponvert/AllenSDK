@@ -25,9 +25,6 @@ class BehaviorProjectCache(Cache):
     SESSION_NWB_KEY = 'session_nwb'
 
     ANALYSIS_FILES_DIR_KEY = 'analysis_files'
-    TRIAL_RESPONSE_KEY = 'trial_response'
-    FLASH_RESPONSE_KEY = 'flash_response'
-    EXTENDED_STIM_COLUMNS_KEY = 'extended_stimulus_presentations'
     EXPOSURE_NUMBER_KEY = 'exposure_number'
 
     MANIFEST_VERSION = '0.0.1'
@@ -100,21 +97,8 @@ class BehaviorProjectCache(Cache):
         )
 
         manifest_builder.add_path(
-            self.TRIAL_RESPONSE_KEY, 'trial_response_df_%d.h5', parent_key=self.ANALYSIS_FILES_DIR_KEY, typename='file'
-        )
-        
-        manifest_builder.add_path(
-            self.FLASH_RESPONSE_KEY, 'flash_response_df_%d.h5', parent_key=self.ANALYSIS_FILES_DIR_KEY, typename='file'
-        )
-
-        manifest_builder.add_path(
-            self.EXTENDED_STIM_COLUMNS_KEY, 'extended_stimulus_presentations_df_%d.h5', parent_key=self.ANALYSIS_FILES_DIR_KEY, typename='file'
-        )
-
-        manifest_builder.add_path(
             self.EXPOSURE_NUMBER_KEY, 'exposure_number_%d.h5', parent_key=self.ANALYSIS_FILES_DIR_KEY, typename='file'
         )
-
 
         return manifest_builder
 
@@ -140,18 +124,18 @@ class BehaviorProjectCache(Cache):
 
 class InternalCacheFromLims(BehaviorProjectCache):
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         fetch_api = BehaviorProjectLimsApi.default()
-        self.cache=False
-        super().__init__(fetch_api)
+        #  self.cache=False
+        super().__init__(fetch_api, **kwargs)
         self.SCIENTIFICA_RIG_NAMES = ['CAM2P.3', 'CAM2P.4', 'CAM2P.5']
         self.MESOSCOPE_RIG_NAMES = ['MESO.1']
 
-    def get_sessions(self, **get_sessions_kwargs):
-        '''
-        Bypass call_caching so we can be flexible with kwargs to this call for now. 
-        '''
-        return self.fetch_api.get_sessions(**get_sessions_kwargs)
+    #  def get_sessions(self, **get_sessions_kwargs):
+    #      '''
+    #      Bypass call_caching so we can be flexible with kwargs to this call for now. 
+    #      '''
+    #      return self.fetch_api.get_sessions(**get_sessions_kwargs)
     
     def get_session(self, ophys_session_id):
         # Return regular session from lims if scientifica, otherwise return mesoscope session
