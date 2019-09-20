@@ -46,7 +46,7 @@ class BehaviorProjectLimsApi(BehaviorProjectApi):
     def get_sessions(
         self,
         container_ids=None,
-        container_workflow_states=("holding","container_qc","postprocessing","complete"),
+        container_workflow_states=("completed", "holding","container_qc","postprocessing","complete"),
         project_codes=("VisualBehavior","VisualBehaviorMultiscope",),
         reporter_lines=("Ai148(TIT2L-GC6f-ICL-tTA2)", "Ai93(TITL-GCaMP6f)",),
         equipment_names=("CAM2P.3","CAM2P.4","CAM2P.5","MESO.1",),
