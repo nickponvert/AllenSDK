@@ -159,7 +159,8 @@ class MesoscopePlaneLimsApi(BehaviorOphysLimsApi):
                 rewards_dict["volume"].append(rewards[0][0])
                 rewards_dict["timestamps"].append(rebase_function(rewards[0][1]))
                 rewards_dict["autorewarded"].append('auto_rewarded' in trial['trial_params'])
-        df = pd.DataFrame(rewards_dict).set_index('timestamps', drop=True)
+        #  df = pd.DataFrame(rewards_dict).set_index('timestamps', drop=True)
+        df = pd.DataFrame(rewards_dict)
         return df
 
     @memoize
@@ -168,9 +169,11 @@ class MesoscopePlaneLimsApi(BehaviorOphysLimsApi):
         behavior_stimulus_file = self.get_behavior_stimulus_file()
         data = pd.read_pickle(behavior_stimulus_file)
         rewards = self.get_rewards()
+        stimulus_presentations=self._get_stimulus_presentations() #Pre-extended columns what for no infinite recursion
         stimulus_timestamps_no_monitor_delay = get_sync_data(self)['stimulus_times_no_delay'][:-1]
         rebase_function = get_stimulus_rebase_function(data, stimulus_timestamps_no_monitor_delay)
-        trial_df = get_trials(data, licks, rewards, rebase_function)
+        trial_df = get_trials(data=data, licks_df=licks, rewards_df=rewards, 
+                              stimulus_presentations_df=stimulus_presentations, rebase=rebase_function)
         return trial_df
 
 
