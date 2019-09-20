@@ -278,8 +278,8 @@ def get_spontaneous_frames(stimulus_presentations_df, ophys_timestamps):
     spontaneous_frames_pre = np.arange(spontaneous_start_frame_pre, spontaneous_end_frame_pre, 1)
 
     # for spontaneous epoch at end of session
-    behavior_end_time = stimulus_presentations_df.iloc[-1].stop_time
-    spontaneous_start_time_post = behavior_end_time + 0.5
+    behavior_end_time = stimulus_presentations_df.iloc[-1].start_time
+    spontaneous_start_time_post = behavior_end_time + 0.75
     spontaneous_end_time_post = spontaneous_start_time_post + spont_duration
     spontaneous_start_frame_post = index_of_nearest_value(ophys_timestamps, spontaneous_start_time_post)
     spontaneous_end_frame_post = index_of_nearest_value(ophys_timestamps, spontaneous_end_time_post)
