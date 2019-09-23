@@ -56,7 +56,7 @@ def raw_running_data():
     })
 
 
-def test_roundtrip_metadata(roundtripper):
+def test_roundtrip_basic_metadata(roundtripper):
     dt = datetime.now(timezone.utc)
     nwbfile = pynwb.NWBFile(
         session_description='EcephysSession',
@@ -67,6 +67,30 @@ def test_roundtrip_metadata(roundtripper):
     api = roundtripper(nwbfile, EcephysNwbSessionApi)
     assert 12345 == api.get_ecephys_session_id()
     assert dt == api.get_session_start_time()
+
+
+def test_add_metadata(nwbfile, roundtripper):
+    metadata = {
+      "specimen_name": "mouse_1",
+      "age_in_days": 100.0,
+      "full_genotype": "wt",
+      "strain": "c57",
+      "sex": "F",
+      "stimulus_name": "brain_observatory_2.0"
+    }
+    write_nwb.add_metadata_to_nwbfile(nwbfile, metadata)
+
+    api = roundtripper(nwbfile, EcephysNwbSessionApi)
+    obtained = api.get_metadata()
+
+    assert set(metadata.keys()) == set(obtained.keys())
+
+    misses = {}
+    for key, value in metadata.items():
+        if obtained[key] != value:
+            misses[key] = {"expected": value, "obtained": obtained[key]}
+
+    assert len(misses) == 0, f"the following metadata items were mismatched: {misses}"
 
 
 def test_add_stimulus_presentations(nwbfile, stimulus_presentations, roundtripper):
@@ -99,23 +123,29 @@ def test_add_optotagging_table_to_nwbfile(nwbfile, roundtripper):
 
 
 @pytest.mark.parametrize('roundtrip', [True, False])
-@pytest.mark.parametrize('pid,desc,srate,lfp_srate,expected', [
+@pytest.mark.parametrize('pid,desc,srate,lfp_srate,has_lfp,expected', [
     [
         12, 
         'a probe', 
         30000.0,
-        2500.0, 
+        2500.0,
+        True,
         pd.DataFrame({
             'description': ['a probe'], 
             'sampling_rate': [30000.0], 
             "lfp_sampling_rate": [2500.0],
+            "has_lfp_data": [True],
             "location": [""]
         }, index=pd.Index([12], name='id'))
     ]
 ])
-def test_add_probe_to_nwbfile(nwbfile, roundtripper, roundtrip, pid, desc, srate, lfp_srate, expected):
+def test_add_probe_to_nwbfile(nwbfile, roundtripper, roundtrip, pid, desc, srate, lfp_srate, has_lfp,expected):
 
-    nwbfile, _, _ = write_nwb.add_probe_to_nwbfile(nwbfile, pid, description=desc, sampling_rate=srate, lfp_sampling_rate=lfp_srate)
+    nwbfile, _, _ = write_nwb.add_probe_to_nwbfile(nwbfile, pid,
+                                                   description=desc,
+                                                   sampling_rate=srate,
+                                                   lfp_sampling_rate=lfp_srate,
+                                                   has_lfp_data=has_lfp)
     if roundtrip:
         obt = roundtripper(nwbfile, EcephysNwbSessionApi)
     else:
@@ -290,6 +320,7 @@ def test_write_probe_lfp_file(tmpdir_factory, lfp_data):
         "name": "probeA",
         "sampling_rate": 29.0,
         "lfp_sampling_rate": 10.0,
+        "temporal_subsampling_factor": 2.0,
         "channels":  [
             {
                 'id': 0,

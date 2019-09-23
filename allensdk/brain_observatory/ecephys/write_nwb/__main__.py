@@ -1,6 +1,6 @@
 import logging
 import sys
-from pathlib import PurePath
+from pathlib import Path, PurePath
 import multiprocessing as mp
 from functools import partial
 
@@ -20,13 +20,19 @@ from allensdk.brain_observatory.nwb import (
     add_invalid_times,
     setup_table_for_epochs,
     setup_table_for_invalid_times,
+    read_eye_dlc_tracking_ellipses,
+    read_eye_gaze_mappings,
+    add_eye_tracking_ellipse_fit_data_to_nwbfile,
+    add_eye_gaze_mapping_data_to_nwbfile,
+    eye_tracking_data_is_valid
 )
 from allensdk.brain_observatory.argschema_utilities import (
     write_or_print_outputs, optional_lims_inputs
 )
 from allensdk.brain_observatory import dict_to_indexed_array
 from allensdk.brain_observatory.ecephys.file_io.continuous_file import ContinuousFile
-from allensdk.brain_observatory.ecephys.nwb import EcephysProbe
+from allensdk.brain_observatory.ecephys.nwb import EcephysProbe, EcephysLabMetaData
+from allensdk.brain_observatory.gaze_mapping._sync_frames import get_synchronized_camera_frame_times
 
 
 STIM_TABLE_RENAMES_MAP = {"Start": "start_time", "End": "stop_time"}
@@ -211,6 +217,13 @@ def group_1d_by_unit(data, data_unit_map, local_to_global_unit_map=None):
     return output
 
 
+def add_metadata_to_nwbfile(nwbfile, metadata):
+    nwbfile.add_lab_meta_data(
+        EcephysLabMetaData(name="metadata", **metadata)
+    )
+    return nwbfile
+
+
 def read_waveforms_to_dictionary(
     waveforms_path, local_to_global_unit_map=None, peak_channel_map=None
 ):
@@ -277,7 +290,9 @@ def read_running_speed(path):
     )
 
 
-def add_probe_to_nwbfile(nwbfile, probe_id, sampling_rate, lfp_sampling_rate, description="", location=""):
+def add_probe_to_nwbfile(nwbfile, probe_id, sampling_rate, lfp_sampling_rate, has_lfp_data,
+                         description="",
+                         location=""):
     """ Creates objects required for representation of a single extracellular ephys probe within an NWB file. These objects amount 
     to a Device (this will be removed at some point from pynwb) and an ElectrodeGroup.
 
@@ -287,6 +302,12 @@ def add_probe_to_nwbfile(nwbfile, probe_id, sampling_rate, lfp_sampling_rate, de
         file to which probe information will be assigned.
     probe_id : int
         unique identifier for this probe - will be used to fill the "name" field on this probe's device and group
+    sampling_rate: float,
+        sampling rate
+    lfp_sampling_rate: float
+        sampling rate of LFP
+    has_lfp_data: bool
+        True if LFP data is available for the probe, otherwise False
     description : str, optional
         human-readable description of this probe. Practically (and temporarily), we use tags like "probeA" or "probeB"
     location : str, optional
@@ -304,7 +325,6 @@ def add_probe_to_nwbfile(nwbfile, probe_id, sampling_rate, lfp_sampling_rate, de
             electrode group object corresponding to this probe
 
     """
-
     probe_nwb_device = pynwb.device.Device(name=str(probe_id))
     probe_nwb_electrode_group = EcephysProbe(
         name=str(probe_id),
@@ -312,7 +332,8 @@ def add_probe_to_nwbfile(nwbfile, probe_id, sampling_rate, lfp_sampling_rate, de
         location=location,
         device=probe_nwb_device,
         sampling_rate=sampling_rate,
-        lfp_sampling_rate=lfp_sampling_rate
+        lfp_sampling_rate=lfp_sampling_rate,
+        has_lfp_data=has_lfp_data,
     )
 
     nwbfile.add_device(probe_nwb_device)
@@ -471,9 +492,17 @@ def write_probe_lfp_file(session_start_time, log_level, probe):
         session_start_time=session_start_time
     )    
 
-    nwbfile, probe_nwb_device, probe_nwb_electrode_group = add_probe_to_nwbfile(nwbfile, 
-        probe_id=probe["id"], description=probe["name"], 
-        sampling_rate=probe["sampling_rate"], lfp_sampling_rate=probe["lfp_sampling_rate"]
+
+    if probe.get("temporal_subsampling_factor", None) is not None:
+        probe["lfp_sampling_rate"] = probe["lfp_sampling_rate"] / probe["temporal_subsampling_factor"]
+
+    nwbfile, probe_nwb_device, probe_nwb_electrode_group = add_probe_to_nwbfile(
+        nwbfile,
+        probe_id=probe["id"],
+        description=probe["name"],
+        sampling_rate=probe["sampling_rate"],
+        lfp_sampling_rate=probe["lfp_sampling_rate"],
+        has_lfp_data=probe["lfp"] is not None
     )
 
     channels = prepare_probewise_channel_table(probe['channels'], probe_nwb_electrode_group)
@@ -501,6 +530,7 @@ def write_probe_lfp_file(session_start_time, log_level, probe):
         total_num_channels=channels.shape[0]
     ).load(memmap=False)
 
+    lfp_data = lfp_data.astype(np.float32)
     lfp_data = lfp_data * probe["amplitude_scale_factor"]
 
     lfp = pynwb.ecephys.LFP(name=f"probe_{probe['id']}_lfp")
@@ -574,9 +604,16 @@ def add_probewise_data_to_nwbfile(nwbfile, probes):
     for probe in probes:
         logging.info(f'found probe {probe["id"]} with name {probe["name"]}')
 
-        nwbfile, probe_nwb_device, probe_nwb_electrode_group = add_probe_to_nwbfile(nwbfile, 
-            probe_id=probe["id"], description=probe["name"], 
-            sampling_rate=probe["sampling_rate"], lfp_sampling_rate=probe["lfp_sampling_rate"]
+        if probe.get("temporal_subsampling_factor", None) is not None:
+            probe["lfp_sampling_rate"] = probe["lfp_sampling_rate"] / probe["temporal_subsampling_factor"]
+
+        nwbfile, probe_nwb_device, probe_nwb_electrode_group = add_probe_to_nwbfile(
+            nwbfile,
+            probe_id=probe["id"],
+            description=probe["name"],
+            sampling_rate=probe["sampling_rate"],
+            lfp_sampling_rate=probe["lfp_sampling_rate"],
+            has_lfp_data=probe["lfp"] is not None
         )
 
         channel_tables[probe["id"]] = prepare_probewise_channel_table(probe['channels'], probe_nwb_electrode_group)
@@ -647,6 +684,32 @@ def add_optotagging_table_to_nwbfile(nwbfile, optotagging_table, tag="optical_st
     return nwbfile
 
 
+def append_eye_tracking_rig_geometry_data_to_nwbfile(nwbfile: pynwb.NWBFile,
+                                                     eye_tracking_rig_geometry: dict) -> pynwb.NWBFile:
+    """ Rig geometry dict should consist of the following fields:
+    monitor_position_mm: [x, y, z]
+    monitor_rotation_deg: [x, y, z]
+    camera_position_mm: [x, y, z]
+    camera_rotation_deg: [x, y, z]
+    led_position_mm: [x, y, z]
+    equipment: A string describing rig
+    """
+    rig_geometry_data = pd.DataFrame(eye_tracking_rig_geometry,
+                                     index=['x', 'y', 'z']).drop('equipment', axis=1)
+    rig_geometry_data['pynwb_index'] = range(len(rig_geometry_data))
+    equipment_data = pd.DataFrame({"equipment": eye_tracking_rig_geometry['equipment']}, index=[0])
+
+    eye_tracking_mod = nwbfile.modules['eye_tracking']
+    rig_geometry_interface = pynwb.core.DynamicTable.from_dataframe(df=rig_geometry_data,
+                                                                    name="rig_geometry_data",
+                                                                    index_column='pynwb_index')
+    equipment_interface = pynwb.core.DynamicTable.from_dataframe(df=equipment_data,
+                                                                 name="equipment")
+    eye_tracking_mod.add_data_interface(rig_geometry_interface)
+    eye_tracking_mod.add_data_interface(equipment_interface)
+
+    return nwbfile
+
 
 def write_ecephys_nwb(
     output_path, 
@@ -655,8 +718,13 @@ def write_ecephys_nwb(
     invalid_epochs,
     probes, 
     running_speed_path,
+    session_sync_path,
+    eye_tracking_rig_geometry,
+    eye_dlc_ellipses_path,
+    eye_gaze_mapping_path,
     pool_size,
     optotagging_table_path=None,
+    metadata=None,
     **kwargs
 ):
 
@@ -665,6 +733,9 @@ def write_ecephys_nwb(
         identifier='{}'.format(session_id),
         session_start_time=session_start_time
     )
+
+    if metadata is not None:
+        nwbfile = add_metadata_to_nwbfile(nwbfile, metadata)
 
     stimulus_table = read_stimulus_table(stimulus_table_path)
     nwbfile = add_stimulus_timestamps(nwbfile, stimulus_table['start_time'].values) # TODO: patch until full timestamps are output by stim table module
@@ -681,13 +752,34 @@ def write_ecephys_nwb(
     add_running_speed_to_nwbfile(nwbfile, running_speed)
     add_raw_running_data_to_nwbfile(nwbfile, raw_running_data)
 
+    # --- Add eye tracking ellipse fits to nwb file ---
+    eye_tracking_frame_times = get_synchronized_camera_frame_times(session_sync_path)
+    eye_dlc_tracking_data = read_eye_dlc_tracking_ellipses(Path(eye_dlc_ellipses_path))
+
+    if eye_tracking_data_is_valid(eye_dlc_tracking_data=eye_dlc_tracking_data,
+                                  synced_timestamps=eye_tracking_frame_times):
+        add_eye_tracking_ellipse_fit_data_to_nwbfile(nwbfile,
+                                                    eye_dlc_tracking_data=eye_dlc_tracking_data,
+                                                    synced_timestamps=eye_tracking_frame_times)
+
+        # --- Append eye tracking rig geometry info to nwb file (with eye tracking) ---
+        append_eye_tracking_rig_geometry_data_to_nwbfile(nwbfile,
+                                                        eye_tracking_rig_geometry=eye_tracking_rig_geometry)
+
+        # --- Add gaze mapped positions to nwb file ---
+        if eye_gaze_mapping_path:
+            eye_gaze_data = read_eye_gaze_mappings(Path(eye_gaze_mapping_path))
+            add_eye_gaze_mapping_data_to_nwbfile(nwbfile,
+                                                eye_gaze_data=eye_gaze_data)
+
     Manifest.safe_make_parent_dirs(output_path)
     io = pynwb.NWBHDF5IO(output_path, mode='w')
     logging.info(f"writing session nwb file to {output_path}")
     io.write(nwbfile)
     io.close()
 
-    probe_outputs = write_probewise_lfp_files(probes, session_start_time, pool_size=pool_size)
+    probes_with_lfp = [p for p in probes if p["lfp"] is not None]
+    probe_outputs = write_probewise_lfp_files(probes_with_lfp, session_start_time, pool_size=pool_size)
 
     return {
         'nwb_path': output_path,
