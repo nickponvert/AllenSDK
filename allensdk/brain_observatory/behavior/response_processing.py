@@ -261,7 +261,7 @@ def stimulus_response_df(stimulus_response_xr):
         'mean_response': stacked_response.data,
         'baseline_response': stacked_baseline.data,
         'p_value': stacked_pval,
-        'pref_image': stacked_preferred_bool
+        'pref_stim': stacked_preferred_bool
     })
     return df
 
