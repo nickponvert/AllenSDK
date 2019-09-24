@@ -44,6 +44,8 @@ class BehaviorOphysSession(LazyPropertyMixin):
             Dataframe containing various signals used to compute running speed
         stimulus_presentations : pandas.DataFrame (LazyProperty)
             Table whose rows are stimulus presentations (i.e. a given image, for a given duration, typically 250 ms) and whose columns are presentation characteristics.
+        extended_stimulus_presentations : pandas.DataFrame (LazyProperty)
+            Table whose rows are stimulus presentations and whose columns are presentation characteristics as well as other useful annotations.
         stimulus_templates : dict (LazyProperty)
             A dictionary containing the stimulus images presented during the session keys are data set names, and values are 3D numpy arrays.
         licks : pandas.DataFrame (LazyProperty)
@@ -86,6 +88,7 @@ class BehaviorOphysSession(LazyPropertyMixin):
         self.running_speed = LazyProperty(self.api.get_running_speed)
         self.running_data_df = LazyProperty(self.api.get_running_data_df)
         self.stimulus_presentations = LazyProperty(self.api.get_stimulus_presentations)
+        self.extended_stimulus_presentations = LazyProperty(self.api.get_extended_stimulus_presentations)
         self.stimulus_templates = LazyProperty(self.api.get_stimulus_templates)
         self.licks = LazyProperty(self.api.get_licks)
         self.rewards = LazyProperty(self.api.get_rewards)

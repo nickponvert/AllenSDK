@@ -147,7 +147,7 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         return running_speed
 
     @memoize
-    def _get_stimulus_presentations(self):
+    def get_stimulus_presentations(self):
         stimulus_timestamps = self.get_stimulus_timestamps()
         behavior_stimulus_file = self.get_behavior_stimulus_file()
         data = pd.read_pickle(behavior_stimulus_file)
@@ -163,11 +163,11 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
 
         return stimulus_presentations_df[sorted(stimulus_presentations_df.columns)]
 
-    def get_stimulus_presentations(self):
+    def get_extended_stimulus_presentations(self):
         '''
         Calculates additional information for each stimulus presentation
         '''
-        stimulus_presentations_pre = self._get_stimulus_presentations()
+        stimulus_presentations_pre = self.get_stimulus_presentations()
         lick_times = self.get_licks()['timestamps'].values
         reward_times = self.get_rewards()['timestamps'].values
         change_times = self.get_trials()['change_time'].values
@@ -233,7 +233,7 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         behavior_stimulus_file = self.get_behavior_stimulus_file()
         data = pd.read_pickle(behavior_stimulus_file)
         rewards = self.get_rewards()
-        stimulus_presentations = self._get_stimulus_presentations()
+        stimulus_presentations = self.get_stimulus_presentations()
         rebase_function = self.get_stimulus_rebase_function()
         trial_df = get_trials(data, licks, rewards, stimulus_presentations, rebase_function)
 

@@ -29,19 +29,19 @@ def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png']):
     for f in formats:
         fig.savefig(os.path.join(fig_dir, fig_title + f), transparent=True, orientation='landscape')
 
-
-def get_dff_matrix(session):
-    '''
-        Returns the dff_trace of a session as a numpy matrix
-
-        INPUTS:
-        session: a behaviorOphysSession object
-        
-        OUTPUTS:
-        dff: a matrix of cells x dff_trace for the entire session
-    '''
-    dff = np.stack(session.dff_traces.dff, axis=0)
-    return dff
+#
+# def get_dff_matrix(session):
+#     '''
+#         Returns the dff_trace of a session as a numpy matrix
+#
+#         INPUTS:
+#         session: a behaviorOphysSession object
+#
+#         OUTPUTS:
+#         dff: a matrix of cells x dff_trace for the entire session
+#     '''
+#     dff = np.stack(session.dff_traces.dff, axis=0)
+#     return dff
 
 
 def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name']):
