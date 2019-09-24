@@ -271,6 +271,51 @@ def find_change(image_index, omitted_index):
                                                
     return change
 
+def add_response_latency(stimulus_presentations):
+    st = stimulus_presentations.copy()
+    st['response_latency'] = st['licks']-st['start_time']
+    # st = st[st.response_latency.isnull()==False] #get rid of random NaN values
+    st['response_latency'] = [response_latency[0] if len(response_latency)>0 else np.nan for response_latency in st['response_latency'].values ]
+    st['response_binary'] = [True if np.isnan(response_latency)==False else False for response_latency in st.response_latency.values]
+    st['early_lick'] = [True if response_latency<0.15 else False for response_latency in st['response_latency'].values ]
+    return st
+
+def add_inter_flash_lick_diff_to_stimulus_presentations(stimulus_presentations):
+    st = stimulus_presentations.copy()
+    st['first_lick'] = [licks[0] if len(licks)>0 else np.nan for licks in st['licks'].values]
+    st['last_lick'] = [licks[-1] if len(licks)>0 else np.nan for licks in st['licks'].values]
+    st['previous_trial_last_lick'] = np.hstack((np.nan, st.last_lick.values[:-1]))
+    st['inter_flash_lick_diff'] = st['previous_trial_last_lick']- st['first_lick']
+    return st
+
+def add_first_lick_in_bout_to_stimulus_presentations(stimulus_presentations):
+    st = stimulus_presentations.copy()
+    # get median inter lick interval to threshold
+    lick_times = st[st.licks.isnull()==False].licks.values
+    median_inter_lick_interval = np.median(np.diff(np.hstack(list(lick_times))))
+    # create first lick in bout boolean
+    st['first_lick_in_bout'] = False # set all to False
+    indices = st[st.response_binary].index
+    st.at[indices, 'first_lick_in_bout'] = True # set stimulus_presentations with a lick to True
+    indices = st[(st.response_binary)&(st.inter_flash_lick_diff<median_inter_lick_interval*3)].index
+    st.at[indices, 'first_lick_in_bout'] = False # set stimulus_presentations with low inter lick interval back to False
+    return st
+
+def get_consumption_licks(stimulus_presentations):
+    st = stimulus_presentations.copy()
+    lick_times = st[st.licks.isnull()==False].licks.values
+    # need to make this a hard threshold
+    median_inter_lick_interval = np.median(np.diff(np.hstack(list(lick_times))))
+    st['consumption_licks'] = False
+    for row in range(len(st)):
+        row_data = st.iloc[row]
+        if (row_data.change==True) and (row_data.first_lick_in_bout==True):
+            st.loc[row,'consumption_licks'] = True
+        if (st.iloc[row-1].consumption_licks==True) & (st.iloc[row].inter_flash_lick_diff < median_inter_lick_interval*3):
+            st.loc[row, 'consumption_licks'] = True
+    return st
+
+
 def get_extended_stimulus_presentations(stimulus_presentations_df,
                                         lick_times,
                                         reward_times,
@@ -382,5 +427,14 @@ def get_extended_stimulus_presentations(stimulus_presentations_df,
     )
 
     stimulus_presentations_df["mean_running_speed"] = flash_running_speed
+
+    # add flass after omitted
+    stimulus_presentations_df['flash_after_omitted'] = np.hstack((False, stimulus_presentations_df.omitted.values[:-1]))
+    stimulus_presentations_df['flash_after_change'] = np.hstack((False, stimulus_presentations_df.change.values[:-1]))
+    # add licking responses
+    stimulus_presentations_df = add_response_latency(stimulus_presentations_df)
+    stimulus_presentations_df = add_inter_flash_lick_diff_to_stimulus_presentations(stimulus_presentations_df)
+    stimulus_presentations_df = add_first_lick_in_bout_to_stimulus_presentations(stimulus_presentations_df)
+    stimulus_presentations_df = get_consumption_licks(stimulus_presentations_df)
 
     return stimulus_presentations_df
