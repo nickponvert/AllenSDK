@@ -195,6 +195,13 @@ def stimulus_response_xr(session, response_analysis_params=None):
         'p_value': p_values
     })
 
+    result = result.merge(session.stimulus_presentations[['image_index', 'image_name']])
+    mean_response_per_image = result[['mean_response', 'image_index']].groupby('image_index').mean(dim='stimulus_presentations_id')
+    image_indices = mean_response_per_image.coords['image_index']
+    pref_image_index = mean_response_per_image['mean_response'].argmax(dim='image_index')
+    result['pref_image_index'] = pref_image_index
+    result['pref_image_bool'] = result['image_index'] == result['pref_image_index']
+
     return result
 
 def trial_response_df(trial_response_xr):
@@ -234,10 +241,12 @@ def stimulus_response_df(stimulus_response_xr):
     mean_response = stimulus_response_xr['mean_response']
     mean_baseline = stimulus_response_xr['mean_baseline']
     p_vals = stimulus_response_xr['p_value']
+    preferred_bool = stimulus_response_xr['pref_image_bool']
     stacked_traces = traces.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
     stacked_response = mean_response.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
     stacked_baseline = mean_baseline.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
     stacked_pval = p_vals.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_preferred_bool = preferred_bool.stack(multi_index = ('stimulus_presentations_id', 'cell_specimen_id')).transpose()
                       
     num_repeats=len(stacked_traces)
     trace_timestamps = np.repeat(
@@ -251,9 +260,23 @@ def stimulus_response_df(stimulus_response_xr):
         'dff_trace_timestamps':list(trace_timestamps),
         'mean_response': stacked_response.data,
         'baseline_response': stacked_baseline.data,
-        'p_value': stacked_pval
+        'p_value': stacked_pval,
+        'pref_image': stacked_preferred_bool
     })
     return df
+
+def to_df(response_xr):
+    eventlocked_traces = response_xr['eventlocked_traces']
+    eventlocked_traces_stacked = eventlocked_traces.stack(
+        multi_index = ('stimulus_presentations_id', 'cell_specimen_id')
+    ).transpose()
+    eventlocked_timestamps = response_xr['eventlocked_timestamps']
+
+    df_pre = response_xr.drop(['eventlocked_traces', 'eventlocked_timestamps']).to_dataframe().reset_index()
+    df_pre.insert(loc=1, column='dff_trace', value=traces_list)
+    df_pre.insert(loc=2, column='dff_trace_timestamps', value=trace_timestamps_list)
+
+
 
 def get_spontaneous_frames(stimulus_presentations_df, ophys_timestamps):
     '''
