@@ -186,24 +186,21 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
 
     res = vb['ophys_data']['stimulus_response'].find_one(
         {'ophys_experiment_id': int(session.ophys_experiment_id)})
-
     if res is None:
         df = session.get_stimulus_response_df().drop(
             ['dff_trace', 'dff_trace_timestamps'], axis=1)
-
-        entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
-        for col in df.columns:
-            entry.update({col: df[col].values.tolist()})
-        entry = clean_and_timestamp(entry)
-        vb['ophys_data']['stimulus_response'].insert_one(entry)
-
+        for idx, row in df.reset_index().iterrows():
+            entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
+            entry.update(row.to_dict())
+            entry = clean_and_timestamp(entry)
+            vb['ophys_data']['stimulus_response'].insert_one(entry)
     else:
         pass
 #         print('experiment {} already in table'.format(session.ophys_experiment_id))
     vb.close()
 
 
-def get_stimulus_response(query={}, server='visual_behavior_data'):
+def get_stimulus_response(query=None, server='visual_behavior_data'):
     '''
     returns stimulus_response table
     pass query in the form:
@@ -216,8 +213,10 @@ def get_stimulus_response(query={}, server='visual_behavior_data'):
     TO IMPLEMENT: get 'dff_traces' and 'dff_trace_timestamps' from a cached xarray and add them back in to the result
 
     '''
+    if query == None:
+        query={}
     vb = Database(server)
-    res = list(vb['ophys_data']['stimulus_response'].find({}))
+    res = list(vb['ophys_data']['stimulus_response'].find(query))
     vb.close()
 
     cols = ['stimulus_presentations_id', 'cell_specimen_id',
@@ -248,7 +247,8 @@ def write_stimulus_presentations_to_collection(session, server='visual_behavior_
     res = vb['ophys_data']['stimulus_presentations'].find_one(
         {'ophys_experiment_id': int(session.ophys_experiment_id)})
 
-    if res is None:
+    #  if res is None:
+    if True:
         df = session.stimulus_presentations.drop(
             ['licks', 'rewards'], axis=1).reset_index()
 
@@ -264,7 +264,7 @@ def write_stimulus_presentations_to_collection(session, server='visual_behavior_
     vb.close()
 
 
-def get_stimulus_presentations(query={}, server='visual_behavior_data'):
+def get_stimulus_presentations(query=None, server='visual_behavior_data'):
     '''
     returns stimulus_response table
     pass query in the form:
@@ -276,8 +276,10 @@ def get_stimulus_presentations(query={}, server='visual_behavior_data'):
     Note that 'rewards' and 'licks' have been dropped from the db
 
     '''
+    if query == None:
+        query = {}
     vb = Database(server)
-    res = list(vb['ophys_data']['stimulus_presentations'].find({}))
+    res = list(vb['ophys_data']['stimulus_presentations'].find(query))
     vb.close()
 
     cols = ['stimulus_presentations_id', 'index', 'block_index', 'index_within_block', 'change', 'duration',
@@ -323,9 +325,11 @@ def write_metrics_to_collection(metrics_df, server='visual_behavior_data'):
     vb.close()
 
 
-def get_metrics(query={}, server='visual_behavior_data'):
+def get_metrics(query=None, server='visual_behavior_data'):
     vb = Database(server)
-    df = pd.DataFrame(list(vb['ophys_data']['metrics'].find({})))
+    if query is None:
+        query = {}
+    df = pd.DataFrame(list(vb['ophys_data']['metrics'].find(query)))
     df['ophys_experiment_id'] = df['ophys_experiment_id'].astype(int)
     df['cell_specimen_id'] = df['cell_specimen_id'].astype(int)
     vb.close()
