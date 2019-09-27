@@ -199,6 +199,14 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
 #         print('experiment {} already in table'.format(session.ophys_experiment_id))
     vb.close()
 
+def write_eventlocked_traces_to_collection(session, server='visual_behavior_data'):
+    stacked_trace = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id', 'stimulus_presentations_id', 'eventlocked_timestamps'))
+    df_stack = stacked_trace.to_dataframe()
+    df_pivot = df_stack.pivot_table(values='eventlocked_traces',
+                                    index=('stimulus_presentations_id', 'eventlocked_timestamps'),
+                                    columns='cell_specimen_id')
+
+
 
 def get_stimulus_response(query=None, server='visual_behavior_data'):
     '''
@@ -249,7 +257,7 @@ def write_stimulus_presentations_to_collection(session, server='visual_behavior_
 
     #  if res is None:
     if True:
-        df = session.stimulus_presentations.drop(
+        df = session.extended_stimulus_presentations.drop(
             ['licks', 'rewards'], axis=1).reset_index()
 
         entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
