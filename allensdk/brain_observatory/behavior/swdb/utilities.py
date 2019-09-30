@@ -9,7 +9,7 @@ import matplotlib as mpl
 '''
 
 
-def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png']):
+def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png', '.pdf']):
     '''
         Function for saving a figure
     
@@ -29,6 +29,7 @@ def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png']):
     for f in formats:
         fig.savefig(os.path.join(fig_dir, fig_title + f), transparent=True, orientation='landscape')
 
+
 #
 # def get_dff_matrix(session):
 #     '''
@@ -44,7 +45,7 @@ def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png']):
 #     return dff
 
 
-def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name']):
+def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name'], get_pref_stim=True):
     '''
         Computes an analysis on a selection of responses (either flashes or trials). Computes mean_response, sem_response, the pref_stim, fraction_active_responses.
 
@@ -65,13 +66,16 @@ def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name']):
 
     # Group by conditions
     rdf = response_df.copy()
+    if 'dff_trace' not in rdf.columns:
+        rdf['dff_trace'] = np.nan
     mdf = rdf.groupby(conditions).apply(get_mean_sem_trace)
     mdf = mdf[['mean_response', 'sem_response', 'mean_trace', 'sem_trace', 'mean_responses']]
     mdf = mdf.reset_index()
 
-    # Add preferred stimulus if we can
-    if ('image_name' in conditions) or ('change_image_name' in conditions):
-        mdf = annotate_mean_df_with_pref_stim(mdf)
+    if get_pref_stim: # need to implement a grouped version of this!
+    # Add preferred stimulus if there is an image column
+        if ('image_name' in conditions) or ('change_image_name' in conditions):
+            mdf = annotate_mean_df_with_pref_stim(mdf)
 
     # What fraction of individual responses were significant?
     fraction_significant_responses = rdf.groupby(conditions).apply(get_fraction_significant_responses)
@@ -117,16 +121,15 @@ def annotate_mean_df_with_pref_stim(mean_df):
         Each cell has one unique preferred stimulus 
     '''
 
+    mdf = mean_df.copy()
+    mdf = mdf.reset_index()
     # Are we dealing with flash_response or trial_response
-    if 'image_name' in mean_df.keys():
+    if 'image_name' in mdf.keys():
         image_name = 'image_name'
     else:
         image_name = 'change_image_name'
 
-    # set up dataframe
-    mdf = mean_df.reset_index()
     mdf['pref_stim'] = False
-
     # Iterate through cells in df       
     for cell in mdf['cell_specimen_id'].unique():
         mc = mdf[(mdf['cell_specimen_id'] == cell)]
@@ -299,17 +302,17 @@ def create_multi_session_mean_df(cache, experiment_ids, conditions=['cell_specim
 
         # Append metadata
         mdf['experiment_id'] = session.metadata['ophys_experiment_id']
-        mdf['experiment_container_id'] = session.metadata['experiment_container_id']
-        stage = manifest[manifest.ophys_experiment_id == session.metadata['ophys_experiment_id']].stage_name.values[0]
-        mdf['stage_name'] = stage
-        mdf['passive'] = parse_stage_for_passive(stage)
-        mdf['image_set'] = parse_stage_for_image_set(stage)
-        mdf['targeted_structure'] = session.metadata['targeted_structure']
-        mdf['imaging_depth'] = session.metadata['imaging_depth']
-        mdf['full_genotype'] = session.metadata['full_genotype']
-        mdf['cre_line'] = session.metadata['full_genotype'].split('/')[0]
-        mdf['retake_number'] = \
-            manifest[manifest.ophys_experiment_id == session.metadata['ophys_experiment_id']].retake_number.values[0]
+        # mdf['experiment_container_id'] = session.metadata['experiment_container_id']
+        # stage = manifest[manifest.ophys_experiment_id == session.metadata['ophys_experiment_id']].stage_name.values[0]
+        # mdf['stage_name'] = stage
+        # mdf['passive'] = parse_stage_for_passive(stage)
+        # mdf['image_set'] = parse_stage_for_image_set(stage)
+        # mdf['targeted_structure'] = session.metadata['targeted_structure']
+        # mdf['imaging_depth'] = session.metadata['imaging_depth']
+        # mdf['full_genotype'] = session.metadata['full_genotype']
+        # mdf['cre_line'] = session.metadata['full_genotype'].split('/')[0]
+        # mdf['retake_number'] = \
+        #     manifest[manifest.ophys_experiment_id == session.metadata['ophys_experiment_id']].retake_number.values[0]
 
         # Concatenate this session to the other sessions
         mega_mdf = pd.concat([mega_mdf, mdf])
