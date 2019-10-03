@@ -146,11 +146,25 @@ def trial_response_xr(session, response_analysis_params=None):
 
     return result
 
+def get_nan_trace_cell_specimen_ids(dff_traces):
+    nan_indices = np.unique(np.where(np.isnan(np.vstack(dff_traces.dff.values)))[0])
+    nan_cell_ids = dff_traces.index[nan_indices]
+    return nan_cell_ids
+
 def stimulus_response_xr(session, response_analysis_params=None):
     if response_analysis_params is None:
         response_analysis_params = get_default_stimulus_response_params()
 
-    dff_traces_arr = np.stack(session.dff_traces['dff'].values)
+    # get rid of cells that are invalid and have NaNs in their traces
+    if not session.filter_invalid_rois:
+        nan_cell_ids = get_nan_trace_cell_specimen_ids(session.dff_traces)
+        dff_traces = session.dff_traces.drop(labels=nan_cell_ids)
+        cell_specimen_table = session.cell_specimen_table.drop(labels=nan_cell_ids)
+    else:
+        dff_traces = session.dff_traces
+        cell_specimen_table = session.cell_specimen_table
+
+    dff_traces_arr = np.stack(dff_traces['dff'].values)
     event_times = session.stimulus_presentations['start_time'].values
     event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)
 
@@ -167,7 +181,7 @@ def stimulus_response_xr(session, response_analysis_params=None):
         coords = {
             "eventlocked_timestamps": trace_timebase,
             "stimulus_presentations_id": session.stimulus_presentations.index.values,
-            "cell_specimen_id": session.cell_specimen_table.index.values
+            "cell_specimen_id": cell_specimen_table.index.values
         }
     )
 
@@ -182,7 +196,6 @@ def stimulus_response_xr(session, response_analysis_params=None):
         {'eventlocked_timestamps':slice(*baseline_range)}
     ].mean(['eventlocked_timestamps'])
 
-    dff_traces_arr = np.stack(session.dff_traces['dff'].values)
     p_values = get_p_value_from_shuffled_spontaneous(mean_response,
                                                      session.stimulus_presentations,
                                                      session.ophys_timestamps,
