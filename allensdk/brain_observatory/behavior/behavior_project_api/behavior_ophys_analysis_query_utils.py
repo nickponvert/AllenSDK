@@ -68,27 +68,46 @@ class Database(object):
 def is_int(n):
     return isinstance(n, (int, np.integer))
 
-
 def is_float(n):
     return isinstance(n, (float, np.float))
 
+def simplify_type(x):
+    if is_int(x):
+        return int(x)
+    elif is_float(x):
+        return float(x)
+    else:
+        return x
+
+def simplify_entry(entry):
+    '''
+    entry is one document
+    '''
+    entry = {k: simplify_type(v) for k, v in entry.items()}
+    return entry
 
 def clean_and_timestamp(entry):
     '''make sure float and int types are basic python types (e.g., not np.float)'''
-    def simplify_type(x):
-        if is_int(x):
-            return int(x)
-        elif is_float(x):
-            return float(x)
-        else:
-            return x
-
-    entry = {k: simplify_type(v) for k, v in entry.items()}
+    entry = simplify_entry(entry)
     entry.update({'entry_time_utc': str(datetime.datetime.utcnow())})
     return entry
 
 
-def write_to_manifest_collection(manifest, overwrite=False, server='visual_behavior_data'):
+def update_or_create(collection, document, keys_to_check):
+    '''
+    updates a collection of the document exists
+    inserts if it does not exist
+    uses keys in `keys_to_check` to determine if document exists. Other keys will be written, but not used for checking uniqueness
+    '''
+    query = {key:simplify_type(document[key]) for key in keys_to_check}
+    if collection.find_one(query) is None:
+        # insert a document if this experiment/cell doesn't already exist
+        collection.insert_one(simplify_entry(document))
+    else:
+        # update a document if it does exist
+        collection.update_one(query, {"$set": simplify_entry(document)})
+
+def write_to_manifest_collection(manifest_entry, overwrite=False, server='visual_behavior_data'):
     '''
     * single table
     * each row will be a document
@@ -100,17 +119,14 @@ def write_to_manifest_collection(manifest, overwrite=False, server='visual_behav
     * make a convenience function to retrieve the entire manifest
     '''
     vb = Database(server)
-    for idx, row in manifest.iterrows():
-        entry = row.to_dict()
-        res = vb['ophys_data']['manifest'].find_one(
-            {'ophys_experiment_id': entry['ophys_experiment_id']})
-        if res is None:
-            # cast to simple int or float
-            entry = clean_and_timestamp(entry)
-            vb['ophys_data']['manifest'].insert_one(entry)
-        else:
-            pass
-#             print('record for ophys_experiment_id {} already exists'.format(entry['ophys_experiment_id']))
+
+    entry = clean_and_timestamp(dict(manifest_entry))
+
+    update_or_create(
+        vb['ophys_data']['manifest'],
+        entry,
+        keys_to_check = ['ophys_session_id']
+    )
     vb.close()
 
 
@@ -147,7 +163,13 @@ def write_to_dff_traces_collection(session, overwrite=False, server='visual_beha
             # cast to simple int or float
             entry = clean_and_timestamp(entry)
             entry['dff'] = entry['dff'].tolist()  # cast array to list
-            vb['ophys_data']['dff_traces'].insert_one(entry)
+
+            # maybe come back to this...
+            update_or_create(
+                vb['ophys_data']['dff_traces'],
+                entry,
+                keys_to_check = ['ophys_experiment_id','cell_specimen_id','cell_roi_id']
+            )
         else:
             pass
 #             print('record for cell_roi_id {} already exists'.format(entry['cell_roi_id']))
@@ -187,16 +209,49 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
     res = vb['ophys_data']['stimulus_response'].find_one(
         {'ophys_experiment_id': int(session.ophys_experiment_id)})
     if res is None:
-        df = session.get_stimulus_response_df().drop(
-            ['dff_trace', 'dff_trace_timestamps'], axis=1)
+
+        df = session.stimulus_response_df.drop(columns=['dff_trace', 'dff_trace_timestamps']).merge(session.stimulus_presentations['image_name'], 
+                                                                                                    left_on='stimulus_presentations_id', 
+                                                                                                    right_index=True)
         for idx, row in df.reset_index().iterrows():
             entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
             entry.update(row.to_dict())
             entry = clean_and_timestamp(entry)
-            vb['ophys_data']['stimulus_response'].insert_one(entry)
+            update_or_create(
+                vb['ophys_data']['stimulus_response'],
+                entry,
+                keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id']
+            )
     else:
         pass
 #         print('experiment {} already in table'.format(session.ophys_experiment_id))
+    vb.close()
+
+def write_eventlocked_traces_to_collection(session, server='visual_behavior_data'):
+
+    vb = Database(server)
+
+    oeid = int(session.ophys_experiment_id)
+
+    stim_response_xr_stacked = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id','stimulus_presentations_id'))
+    print("uploading stimulus response traces for oeid: {}\n".format(oeid))
+    for trace_ind in list(range(stim_response_xr_stacked.shape[1])):
+        trace_xr = stim_response_xr_stacked[:, trace_ind]
+        document = {
+            'ophys_experiment_id': int(oeid),
+            'cell_specimen_id': int(trace_xr.coords['multi_index'].data.item()[0]),
+            'stimulus_presentations_id': int(trace_xr.coords['multi_index'].data.item()[1]),
+            't_0': float(trace_xr.coords['eventlocked_timestamps'][0].data.item()),
+            't_f': float(trace_xr.coords['eventlocked_timestamps'][-1].data.item()),
+            'dff': trace_xr.data.astype(float).tolist()
+        }
+        document = clean_and_timestamp(document)
+        update_or_create(
+            vb['ophys_data']['stimulus_response_traces'],
+            document,
+            keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id']
+        )
+
     vb.close()
 
 
@@ -249,14 +304,19 @@ def write_stimulus_presentations_to_collection(session, server='visual_behavior_
 
     #  if res is None:
     if True:
-        df = session.stimulus_presentations.drop(
+        df = session.extended_stimulus_presentations.drop(
             ['licks', 'rewards'], axis=1).reset_index()
 
         entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
         for col in df.columns:
             entry.update({col: df[col].values.tolist()})
         entry = clean_and_timestamp(entry)
-        vb['ophys_data']['stimulus_presentations'].insert_one(entry)
+
+        update_or_create(
+            vb['ophys_data']['stimulus_presentations'],
+            entry,
+            keys_to_check = ['ophys_experiment_id']
+        )
 
     else:
         pass
@@ -311,16 +371,11 @@ def write_metrics_to_collection(metrics_df, server='visual_behavior_data'):
     for idx, row in df.reset_index().iterrows():
         entry = clean_and_timestamp(row.to_dict())
 
-        query = {
-            'ophys_experiment_id': entry['ophys_experiment_id'],
-            'cell_specimen_id': entry['cell_specimen_id'],
-        }
-        if vb['ophys_data']['metrics'].find_one(query) is None:
-            # insert a document if this experiment/cell doesn't already exist
-            vb['ophys_data']['metrics'].insert_one(entry)
-        else:
-            # update existing document if it does exist
-            vb['ophys_data']['metrics'].update_one(query, {"$set": entry})
+        update_or_create(
+            vb['ophys_data']['metrics'],
+            entry,
+            keys_to_check = ['ophys_experiment_id','cell_specimen_id']
+        )
 
     vb.close()
 
