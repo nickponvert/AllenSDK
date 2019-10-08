@@ -205,7 +205,7 @@ def stimulus_response_xr(session, response_analysis_params=None):
     )
 
     response_range = [0, response_analysis_params['response_window_duration_seconds']]
-    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds']]
+    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds'], 0]
 
     mean_response = eventlocked_traces_xr.loc[
         {'eventlocked_timestamps':slice(*response_range)}
@@ -230,7 +230,7 @@ def stimulus_response_xr(session, response_analysis_params=None):
     result = result.merge(session.stimulus_presentations[['image_index', 'image_name']])
     mean_response_per_image = result[['mean_response', 'image_index']].groupby('image_index').mean(dim='stimulus_presentations_id')
     image_indices = mean_response_per_image.coords['image_index']
-    pref_image_index = mean_response_per_image['mean_response'].argmax(dim='image_index')
+    pref_image_index = mean_response_per_image.drop(8, dim='image_index')['mean_response'].argmax(dim='image_index') #drop omitted
     result['pref_image_index'] = pref_image_index
     result['pref_image_bool'] = result['image_index'] == result['pref_image_index']
 
