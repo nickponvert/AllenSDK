@@ -187,8 +187,10 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
     res = vb['ophys_data']['stimulus_response'].find_one(
         {'ophys_experiment_id': int(session.ophys_experiment_id)})
     if res is None:
-        df = session.get_stimulus_response_df().drop(
-            ['dff_trace', 'dff_trace_timestamps'], axis=1)
+
+        df = session.stimulus_response_df.drop(columns=['dff_trace', 'dff_trace_timestamps']).merge(session.stimulus_presentations['image_name'], 
+                                                                                                    left_on='stimulus_presentations_id', 
+                                                                                                    right_index=True)
         for idx, row in df.reset_index().iterrows():
             entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
             entry.update(row.to_dict())
