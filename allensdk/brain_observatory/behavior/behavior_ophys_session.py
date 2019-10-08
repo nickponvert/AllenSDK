@@ -100,6 +100,7 @@ class BehaviorOphysSession(LazyPropertyMixin):
         self.segmentation_mask_image = LazyProperty(self.get_segmentation_mask_image)
         self.image_index = LazyProperty(self.api.get_image_index_names)
         self.roi_masks = LazyProperty(self.get_roi_masks)
+        self.roi_masks_dict = LazyProperty(self.get_roi_masks_dict)
 
         self.trial_response_xr = LazyProperty(self.get_trial_response_xr)
         self.stimulus_response_xr = LazyProperty(self.get_stimulus_response_xr)
@@ -408,8 +409,8 @@ class BehaviorOphysSession(LazyPropertyMixin):
     def get_omission_response_df(self):
         return response_processing.omission_response_df(self.omission_response_xr)
 
-    def get_roi_masks(self):
-        masks = super(ExtendedBehaviorOphysSession, self).get_roi_masks()
+    def get_roi_masks_dict(self):
+        masks = self.get_roi_masks()
         return {
             cell_specimen_id: masks.loc[{"cell_specimen_id": cell_specimen_id}].data
             for cell_specimen_id in masks["cell_specimen_id"].data
@@ -417,7 +418,7 @@ class BehaviorOphysSession(LazyPropertyMixin):
 
     def get_segmentation_mask_image(self):
         masks = self.roi_masks
-        return np.any([submask for submask in masks.values()], axis=0)
+        return np.any([submask for submask in masks.data], axis=0)
 
 
 def _translate_roi_mask(mask, row_offset, col_offset):
