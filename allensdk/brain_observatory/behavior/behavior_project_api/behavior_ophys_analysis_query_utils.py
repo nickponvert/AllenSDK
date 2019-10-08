@@ -88,6 +88,20 @@ def clean_and_timestamp(entry):
     return entry
 
 
+def update_or_create(collection, document, keys_to_check):
+    '''
+    updates a collection of the document exists
+    inserts if it does not exist
+    uses keys in `keys_to_check` to determine if document exists. Other keys will be written, but not used for checking uniqueness
+    '''
+    query = {key:document[key] for key in keys_to_check}
+    if collection.find_one(query) is None:
+        # insert a document if this experiment/cell doesn't already exist
+        collection.insert_one(document)
+    else:
+        # update a document if it does exist
+        collection.update_one(query, {"$set": document})
+
 def write_to_manifest_collection(manifest, overwrite=False, server='visual_behavior_data'):
     '''
     * single table
@@ -147,7 +161,13 @@ def write_to_dff_traces_collection(session, overwrite=False, server='visual_beha
             # cast to simple int or float
             entry = clean_and_timestamp(entry)
             entry['dff'] = entry['dff'].tolist()  # cast array to list
-            vb['ophys_data']['dff_traces'].insert_one(entry)
+
+            # maybe come back to this...
+            update_or_create(
+                vb['ophys_data']['dff_traces'],
+                entry,
+                keys_to_check = ['ophys_experiment_id','cell_specimen_id','cell_roi_id']
+            )
         else:
             pass
 #             print('record for cell_roi_id {} already exists'.format(entry['cell_roi_id']))
@@ -195,7 +215,11 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
             entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
             entry.update(row.to_dict())
             entry = clean_and_timestamp(entry)
-            vb['ophys_data']['stimulus_response'].insert_one(entry)
+            update_or_create(
+                vb['ophys_data']['stimulus_response'],
+                entry,
+                keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id']
+            )
     else:
         pass
 #         print('experiment {} already in table'.format(session.ophys_experiment_id))
@@ -218,7 +242,13 @@ def write_eventlocked_traces_to_collection(session, server='visual_behavior_data
             'dff': trace_xr.data.astype(float).tolist()
         }
         document = clean_and_timestamp(document)
-        vb['ophys_data']['stimulus_response_traces'].insert_one(document)
+        update_or_create(
+            vb['ophys_data']['stimulus_response_traces'],
+            document,
+            keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id']
+        )
+
+    vb.close()
 
 
 def get_stimulus_response(query=None, server='visual_behavior_data'):
@@ -277,7 +307,12 @@ def write_stimulus_presentations_to_collection(session, server='visual_behavior_
         for col in df.columns:
             entry.update({col: df[col].values.tolist()})
         entry = clean_and_timestamp(entry)
-        vb['ophys_data']['stimulus_presentations'].insert_one(entry)
+
+        update_or_create(
+            vb['ophys_data']['stimulus_presentations'],
+            entry,
+            keys_to_check = ['ophys_experiment_id']
+        )
 
     else:
         pass
@@ -332,16 +367,11 @@ def write_metrics_to_collection(metrics_df, server='visual_behavior_data'):
     for idx, row in df.reset_index().iterrows():
         entry = clean_and_timestamp(row.to_dict())
 
-        query = {
-            'ophys_experiment_id': entry['ophys_experiment_id'],
-            'cell_specimen_id': entry['cell_specimen_id'],
-        }
-        if vb['ophys_data']['metrics'].find_one(query) is None:
-            # insert a document if this experiment/cell doesn't already exist
-            vb['ophys_data']['metrics'].insert_one(entry)
-        else:
-            # update existing document if it does exist
-            vb['ophys_data']['metrics'].update_one(query, {"$set": entry})
+        update_or_create(
+            vb['ophys_data']['metrics'],
+            entry,
+            keys_to_check = ['ophys_experiment_id','cell_specimen_id']
+        )
 
     vb.close()
 
