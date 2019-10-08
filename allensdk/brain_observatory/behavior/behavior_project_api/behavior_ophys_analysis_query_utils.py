@@ -200,12 +200,23 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
     vb.close()
 
 def write_eventlocked_traces_to_collection(session, server='visual_behavior_data'):
-    stacked_trace = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id', 'stimulus_presentations_id', 'eventlocked_timestamps'))
-    df_stack = stacked_trace.to_dataframe()
-    df_pivot = df_stack.pivot_table(values='eventlocked_traces',
-                                    index=('stimulus_presentations_id', 'eventlocked_timestamps'),
-                                    columns='cell_specimen_id')
 
+    vb = Database(server)
+
+    stim_response_xr_stacked = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id','stimulus_presentations_id'))
+    print("uploading stimulus response traces for oeid: {}\n".format(oeid))
+    for trace_ind in list(range(stim_response_xr_stacked.shape[1])):
+        trace_xr = stim_response_xr_stacked[:, trace_ind]
+        document = {
+            'ophys_experiment_id': int(oeid),
+            'cell_specimen_id': int(trace_xr.coords['multi_index'].data.item()[0]),
+            'stimulus_presentations_id': int(trace_xr.coords['multi_index'].data.item()[1]),
+            't_0': float(trace_xr.coords['eventlocked_timestamps'][0].data.item()),
+            't_f': float(trace_xr.coords['eventlocked_timestamps'][-1].data.item()),
+            'dff': trace_xr.data.astype(float).tolist()
+        }
+        document = clean_and_timestamp(document)
+        vb['ophys_data']['stimulus_response_traces'].insert_one(document)
 
 
 def get_stimulus_response(query=None, server='visual_behavior_data'):
