@@ -46,6 +46,25 @@ def get_default_stimulus_response_params():
     }
     return stimulus_response_params
 
+def get_default_omission_response_params():
+    '''
+        Get default parameters for computing omission_response_xr
+        including the window around each omission start_time to take a snippet of the dF/F trace for each cell,
+        the duration of time after each start_time to take the mean_response,
+        and the duration of time before each start_time to take the baseline_response.
+        Args:
+            None
+        Returns
+            (dict) dict of response window params for computing omission_response_xr
+        '''
+    stimulus_response_params = {
+        "window_around_timepoint_seconds":[-3, 3],
+        "response_window_duration_seconds":0.5,
+        "baseline_window_duration_seconds":0.25
+    }
+    return omission_response_params
+
+
 def index_of_nearest_value(sample_times, event_times): 
     '''
     The index of the nearest sample time for each event time.
@@ -217,6 +236,69 @@ def stimulus_response_xr(session, response_analysis_params=None):
 
     return result
 
+
+def omission_response_xr(session, response_analysis_params=None):
+    if response_analysis_params is None:
+        response_analysis_params = get_default_omission_response_params()
+
+    # get rid of cells that are invalid and have NaNs in their traces
+    if not session.filter_invalid_rois:
+        nan_cell_ids = get_nan_trace_cell_specimen_ids(session.dff_traces)
+        dff_traces = session.dff_traces.drop(labels=nan_cell_ids)
+        cell_specimen_table = session.cell_specimen_table.drop(labels=nan_cell_ids)
+    else:
+        dff_traces = session.dff_traces
+        cell_specimen_table = session.cell_specimen_table
+
+    dff_traces_arr = np.stack(dff_traces['dff'].values)
+    # get omissions only
+    stimuli = session.stimulus_presentations
+    omission_presentations = stimuli[stimuli.image_name=='omitted']
+    event_times = omission_presentations['start_time'].values
+    event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)
+
+    event_indices, start_ind_offset, end_ind_offset, trace_timebase = slice_inds_and_offsets(
+        ophys_times=session.ophys_timestamps,
+        event_times=event_times,
+        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds']
+    )
+    sliced_dataout = eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_offset)
+
+    eventlocked_traces_xr = xr.DataArray(
+        data = sliced_dataout,
+        dims = ("eventlocked_timestamps", "stimulus_presentations_id", "cell_specimen_id"),
+        coords = {
+            "eventlocked_timestamps": trace_timebase,
+            "stimulus_presentations_id": omission_presentations.index.values,
+            "cell_specimen_id": cell_specimen_table.index.values
+        }
+    )
+
+    response_range = [0, response_analysis_params['response_window_duration_seconds']]
+    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds']]
+
+    mean_response = eventlocked_traces_xr.loc[
+        {'eventlocked_timestamps':slice(*response_range)}
+    ].mean(['eventlocked_timestamps'])
+
+    mean_baseline = eventlocked_traces_xr.loc[
+        {'eventlocked_timestamps':slice(*baseline_range)}
+    ].mean(['eventlocked_timestamps'])
+
+    p_values = get_p_value_from_shuffled_spontaneous(mean_response,
+                                                     omission_presentations,
+                                                     session.ophys_timestamps,
+                                                     dff_traces_arr,
+                                                     response_analysis_params['response_window_duration_seconds'])
+    result = xr.Dataset({
+        'eventlocked_traces':eventlocked_traces_xr,
+        'mean_response':mean_response,
+        'mean_baseline':mean_baseline,
+        'p_value': p_values
+    })
+
+    return result
+
 def trial_response_df(trial_response_xr):
     '''
     Smash things into df format if you want.
@@ -277,6 +359,38 @@ def stimulus_response_df(stimulus_response_xr):
         'pref_stim': stacked_preferred_bool
     })
     return df
+
+
+def omission_response_df(omission_response_xr):
+    '''
+    Smash things into df format if you want.
+    '''
+    traces = omission_response_xr['eventlocked_traces']
+    mean_response = omission_response_xr['mean_response']
+    mean_baseline = omission_response_xr['mean_baseline']
+    p_vals = omission_response_xr['p_value']
+
+    stacked_traces = traces.stack(multi_index=('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_response = mean_response.stack(multi_index=('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_baseline = mean_baseline.stack(multi_index=('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+    stacked_pval = p_vals.stack(multi_index=('stimulus_presentations_id', 'cell_specimen_id')).transpose()
+
+    num_repeats = len(stacked_traces)
+    trace_timestamps = np.repeat(
+        stacked_traces.coords['eventlocked_timestamps'].data[np.newaxis, :],
+        repeats=num_repeats, axis=0)
+
+    df = pd.DataFrame({
+        'stimulus_presentations_id': stacked_traces.coords['stimulus_presentations_id'],
+        'cell_specimen_id': stacked_traces.coords['cell_specimen_id'],
+        'dff_trace': list(stacked_traces.data),
+        'dff_trace_timestamps': list(trace_timestamps),
+        'mean_response': stacked_response.data,
+        'baseline_response': stacked_baseline.data,
+        'p_value': stacked_pval,
+    })
+    return df
+
 
 def to_df(response_xr):
     eventlocked_traces = response_xr['eventlocked_traces']

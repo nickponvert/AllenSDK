@@ -103,8 +103,10 @@ class BehaviorOphysSession(LazyPropertyMixin):
 
         self.trial_response_xr = LazyProperty(self.get_trial_response_xr)
         self.stimulus_response_xr = LazyProperty(self.get_stimulus_response_xr)
+        self.omission_response_xr = LazyProperty(self.get_omission_response_xr)
         self.trial_response_df = LazyProperty(self.get_trial_response_df)
         self.stimulus_response_df = LazyProperty(self.get_stimulus_response_df)
+        self.omission_response_df = LazyProperty(self.get_omission_response_df)
 
     def get_roi_masks(self, cell_specimen_ids=None):
         """ Obtains boolean masks indicating the location of one or more cell's ROIs in this session.
@@ -369,7 +371,7 @@ class BehaviorOphysSession(LazyPropertyMixin):
         response_analysis_params = {
             "window_around_timepoint_seconds":[-4, 8],
             "response_window_duration_seconds":0.5,
-            "baseline_window_duration_seconds":0.5
+            "baseline_window_duration_seconds":0.25
         }
     ):
         trial_response_xr = response_processing.trial_response_xr(self, response_analysis_params)
@@ -383,14 +385,28 @@ class BehaviorOphysSession(LazyPropertyMixin):
         response_analysis_params = {
             "window_around_timepoint_seconds":[-0.5, 0.75],
             "response_window_duration_seconds":0.5,
-            "baseline_window_duration_seconds":0.5
+            "baseline_window_duration_seconds":0.25
         }
     ):
         stimulus_response_xr = response_processing.stimulus_response_xr(self, response_analysis_params)
         return stimulus_response_xr
 
+    def get_omission_response_xr(
+        self,
+        response_analysis_params = {
+            "window_around_timepoint_seconds":[-3, 3],
+            "response_window_duration_seconds":0.5,
+            "baseline_window_duration_seconds":0.25
+        }
+    ):
+        omission_response_xr = response_processing.omission_response_xr(self, response_analysis_params)
+        return omission_response_xr
+
     def get_stimulus_response_df(self):
         return response_processing.stimulus_response_df(self.stimulus_response_xr)
+
+    def get_omission_response_df(self):
+        return response_processing.omission_response_df(self.omission_response_xr)
 
     def get_roi_masks(self):
         masks = super(ExtendedBehaviorOphysSession, self).get_roi_masks()
