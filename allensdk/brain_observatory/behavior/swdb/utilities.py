@@ -9,7 +9,7 @@ import matplotlib as mpl
 '''
 
 
-def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png', '.pdf']):
+def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png']):
     '''
         Function for saving a figure
     
@@ -21,13 +21,14 @@ def save_figure(fig, figsize, save_dir, folder, filename, formats=['.png', '.pdf
         filename: string, the desired name of the saved figure
         formats: a list of file formats as strings to save the figure as, ex: ['.png','.pdf']
     '''
+    import matplotlib as mpl
     fig_dir = os.path.join(save_dir, folder)
     if not os.path.exists(fig_dir):
         os.mkdir(fig_dir)
     mpl.rcParams['pdf.fonttype'] = 42
     fig.set_size_inches(figsize)
     for f in formats:
-        fig.savefig(os.path.join(fig_dir, fig_title + f), transparent=True, orientation='landscape')
+        fig.savefig(os.path.join(fig_dir, filename + f), transparent=True, orientation='landscape')
 
 
 #
