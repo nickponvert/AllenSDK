@@ -168,16 +168,16 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         Calculates additional information for each stimulus presentation
         '''
         stimulus_presentations_pre = self.get_stimulus_presentations()
-        lick_times = self.get_licks()['timestamps'].values
-        reward_times = self.get_rewards()['timestamps'].values
+        # lick_times = self.get_licks()['timestamps'].values
+        # reward_times = self.get_rewards()['timestamps'].values
         change_times = self.get_trials()['change_time'].values
         change_times = change_times[~np.isnan(change_times)]
         running_speed_df = self.get_running_speed()
 
         extended_stimulus_presentations = get_extended_stimulus_presentations(
             stimulus_presentations_df = stimulus_presentations_pre,
-            lick_times = lick_times, 
-            reward_times = reward_times,
+            licks = self.get_licks(),
+            rewards = self.get_rewards(),
             change_times = change_times,
             running_speed_df = running_speed_df
         )
