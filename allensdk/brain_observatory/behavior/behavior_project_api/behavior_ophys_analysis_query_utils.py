@@ -102,7 +102,7 @@ def update_or_create(collection, document, keys_to_check):
         # update a document if it does exist
         collection.update_one(query, {"$set": document})
 
-def write_to_manifest_collection(manifest, overwrite=False, server='visual_behavior_data'):
+def write_to_manifest_collection(manifest_entry, overwrite=False, server='visual_behavior_data'):
     '''
     * single table
     * each row will be a document
@@ -114,16 +114,22 @@ def write_to_manifest_collection(manifest, overwrite=False, server='visual_behav
     * make a convenience function to retrieve the entire manifest
     '''
     vb = Database(server)
-    for idx, row in manifest.iterrows():
-        entry = row.to_dict()
-        res = vb['ophys_data']['manifest'].find_one(
-            {'ophys_experiment_id': entry['ophys_experiment_id']})
-        if res is None:
-            # cast to simple int or float
-            entry = clean_and_timestamp(entry)
-            vb['ophys_data']['manifest'].insert_one(entry)
-        else:
-            pass
+
+    entry = dict(manifest_entry)
+
+    update_or_create(
+        vb['ophys_data']['manifest'],
+        entry,
+        keys_to_check = ['ophys_session_id']
+    )
+    res = vb['ophys_data']['manifest'].find_one(
+        {'ophys_experiment_id': entry['ophys_experiment_id']})
+    if res is None:
+        # cast to simple int or float
+        entry = clean_and_timestamp(entry)
+        vb['ophys_data']['manifest'].insert_one(entry)
+    else:
+        pass
 #             print('record for ophys_experiment_id {} already exists'.format(entry['ophys_experiment_id']))
     vb.close()
 
@@ -228,6 +234,8 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
 def write_eventlocked_traces_to_collection(session, server='visual_behavior_data'):
 
     vb = Database(server)
+
+    oeid = int(session.ophys_experiment_id)
 
     stim_response_xr_stacked = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id','stimulus_presentations_id'))
     print("uploading stimulus response traces for oeid: {}\n".format(oeid))
