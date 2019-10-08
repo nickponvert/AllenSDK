@@ -68,22 +68,27 @@ class Database(object):
 def is_int(n):
     return isinstance(n, (int, np.integer))
 
-
 def is_float(n):
     return isinstance(n, (float, np.float))
 
+def simplify_type(x):
+    if is_int(x):
+        return int(x)
+    elif is_float(x):
+        return float(x)
+    else:
+        return x
+
+def simplify_entry(entry):
+    '''
+    entry is one document
+    '''
+    entry = {k: simplify_type(v) for k, v in entry.items()}
+    return entry
 
 def clean_and_timestamp(entry):
     '''make sure float and int types are basic python types (e.g., not np.float)'''
-    def simplify_type(x):
-        if is_int(x):
-            return int(x)
-        elif is_float(x):
-            return float(x)
-        else:
-            return x
-
-    entry = {k: simplify_type(v) for k, v in entry.items()}
+    entry = simplify_entry(entry)
     entry.update({'entry_time_utc': str(datetime.datetime.utcnow())})
     return entry
 
@@ -94,13 +99,13 @@ def update_or_create(collection, document, keys_to_check):
     inserts if it does not exist
     uses keys in `keys_to_check` to determine if document exists. Other keys will be written, but not used for checking uniqueness
     '''
-    query = {key:document[key] for key in keys_to_check}
+    query = {key:simplify_type(document[key]) for key in keys_to_check}
     if collection.find_one(query) is None:
         # insert a document if this experiment/cell doesn't already exist
-        collection.insert_one(document)
+        collection.insert_one(simplify_entry(document))
     else:
         # update a document if it does exist
-        collection.update_one(query, {"$set": document})
+        collection.update_one(query, {"$set": simplify_entry(document)})
 
 def write_to_manifest_collection(manifest_entry, overwrite=False, server='visual_behavior_data'):
     '''
@@ -115,22 +120,13 @@ def write_to_manifest_collection(manifest_entry, overwrite=False, server='visual
     '''
     vb = Database(server)
 
-    entry = dict(manifest_entry)
+    entry = clean_and_timestamp(dict(manifest_entry))
 
     update_or_create(
         vb['ophys_data']['manifest'],
         entry,
         keys_to_check = ['ophys_session_id']
     )
-    res = vb['ophys_data']['manifest'].find_one(
-        {'ophys_experiment_id': entry['ophys_experiment_id']})
-    if res is None:
-        # cast to simple int or float
-        entry = clean_and_timestamp(entry)
-        vb['ophys_data']['manifest'].insert_one(entry)
-    else:
-        pass
-#             print('record for ophys_experiment_id {} already exists'.format(entry['ophys_experiment_id']))
     vb.close()
 
 
