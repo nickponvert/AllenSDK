@@ -7,6 +7,7 @@ import os
 import glob
 import traceback
 import datetime
+import time
 
 from allensdk.brain_observatory.behavior import behavior_project_cache as bpc
 import allensdk.brain_observatory.behavior.cell_metrics as cm
@@ -92,20 +93,22 @@ def clean_and_timestamp(entry):
     entry.update({'entry_time_utc': str(datetime.datetime.utcnow())})
     return entry
 
-
-def update_or_create(collection, document, keys_to_check):
+def update_or_create(collection, document, keys_to_check, force_write=False):
     '''
     updates a collection of the document exists
     inserts if it does not exist
     uses keys in `keys_to_check` to determine if document exists. Other keys will be written, but not used for checking uniqueness
     '''
-    query = {key:simplify_type(document[key]) for key in keys_to_check}
-    if collection.find_one(query) is None:
-        # insert a document if this experiment/cell doesn't already exist
+    if force_write:
         collection.insert_one(simplify_entry(document))
     else:
-        # update a document if it does exist
-        collection.update_one(query, {"$set": simplify_entry(document)})
+        query = {key:simplify_type(document[key]) for key in keys_to_check}
+        if collection.find_one(query) is None:
+            # insert a document if this experiment/cell doesn't already exist
+            collection.insert_one(simplify_entry(document))
+        else:
+            # update a document if it does exist
+            collection.update_one(query, {"$set": simplify_entry(document)})
 
 def write_to_manifest_collection(manifest_entry, overwrite=False, server='visual_behavior_data'):
     '''
@@ -138,7 +141,6 @@ def get_manifest(server='visual_behavior_data'):
     man = vb['ophys_data']['manifest'].find({})
     vb.close()
     return pd.DataFrame(list(man))
-
 
 def write_to_dff_traces_collection(session, overwrite=False, server='visual_behavior_data'):
     '''
@@ -189,7 +191,7 @@ def get_dff_traces(query={}, server='visual_behavior_data'):
     return df
 
 
-def write_stimulus_response_to_collection(session, server='visual_behavior_data'):
+def write_stimulus_response_to_collection(session, server='visual_behavior_data', force_write=False):
     '''
     * each row will be a document
     * save before merging in stimulus_presentations
@@ -206,36 +208,48 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
 
     vb = Database(server)
 
-    res = vb['ophys_data']['stimulus_response'].find_one(
-        {'ophys_experiment_id': int(session.ophys_experiment_id)})
-    if res is None:
+    collection = vb['ophys_data']['stimulus_response']
+    if force_write:
+        collection.delete_many({'ophys_experiment_id':int(session.ophys_experiment_id)})
 
-        df = session.stimulus_response_df.drop(columns=['dff_trace', 'dff_trace_timestamps']).merge(session.stimulus_presentations['image_name'], 
-                                                                                                    left_on='stimulus_presentations_id', 
-                                                                                                    right_index=True)
-        for idx, row in df.reset_index().iterrows():
-            entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
-            entry.update(row.to_dict())
-            entry = clean_and_timestamp(entry)
-            update_or_create(
-                vb['ophys_data']['stimulus_response'],
-                entry,
-                keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id']
-            )
-    else:
-        pass
-#         print('experiment {} already in table'.format(session.ophys_experiment_id))
+    df = session.stimulus_response_df.drop(columns=['dff_trace', 'dff_trace_timestamps']).merge(session.stimulus_presentations['image_name'], 
+                                                                                                left_on='stimulus_presentations_id', 
+                                                                                                right_index=True)
+    for idx, row in df.reset_index().iterrows():
+        entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
+        entry.update(row.to_dict())
+        entry = clean_and_timestamp(entry)
+        
+        update_or_create(
+            collection,
+            entry,
+            keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id'],
+            force_write = force_write,
+        )
+
     vb.close()
 
-def write_eventlocked_traces_to_collection(session, server='visual_behavior_data'):
+def write_eventlocked_traces_to_collection(session, server='visual_behavior_data', force_write=False):
 
     vb = Database(server)
 
+    expected_time_per_iteration = 0.01
+    iterations_to_check = 1000
+    
+    collection = vb['ophys_data']['stimulus_response_traces']
     oeid = int(session.ophys_experiment_id)
+    if force_write:
+        collection.delete_many({'ophys_experiment_id':oeid})
 
     stim_response_xr_stacked = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id','stimulus_presentations_id'))
     print("uploading stimulus response traces for oeid: {}\n".format(oeid))
-    for trace_ind in list(range(stim_response_xr_stacked.shape[1])):
+    t0 = time.time()
+    for ii,trace_ind in enumerate(list(range(stim_response_xr_stacked.shape[1]))):
+        if ii == iterations_to_check:
+            # just to be sure this isn't running absurdly slow:
+            if time.time()-t0>iterations_to_check*expected_time_per_iteration:
+                assert False, "this is too slow"
+
         trace_xr = stim_response_xr_stacked[:, trace_ind]
         document = {
             'ophys_experiment_id': int(oeid),
@@ -246,10 +260,12 @@ def write_eventlocked_traces_to_collection(session, server='visual_behavior_data
             'dff': trace_xr.data.astype(float).tolist()
         }
         document = clean_and_timestamp(document)
+
         update_or_create(
-            vb['ophys_data']['stimulus_response_traces'],
+            collection,
             document,
-            keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id']
+            keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id'],
+            force_write = force_write
         )
 
     vb.close()
@@ -287,7 +303,7 @@ def get_stimulus_response(query=None, server='visual_behavior_data'):
     return df
 
 
-def write_stimulus_presentations_to_collection(session, server='visual_behavior_data'):
+def write_stimulus_presentations_to_collection(session, server='visual_behavior_data', force_write=False):
     '''
     * index by:  
      * ophys_experiment_id
@@ -298,29 +314,25 @@ def write_stimulus_presentations_to_collection(session, server='visual_behavior_
      NOTE: dropping rewards and licks. Should those be reimplimented later"
      '''
     vb = Database(server)
+    collection = vb['ophys_data']['stimulus_presentations']
+    if force_write:
+        collection.delete_many({'ophys_experiment_id':int(session.ophys_experiment_id)})
 
-    res = vb['ophys_data']['stimulus_presentations'].find_one(
-        {'ophys_experiment_id': int(session.ophys_experiment_id)})
+    df = session.extended_stimulus_presentations.drop(
+        ['licks', 'rewards'], axis=1).reset_index()
 
-    #  if res is None:
-    if True:
-        df = session.extended_stimulus_presentations.drop(
-            ['licks', 'rewards'], axis=1).reset_index()
+    entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
+    for col in df.columns:
+        entry.update({col: df[col].values.tolist()})
+    entry = clean_and_timestamp(entry)
 
-        entry = {'ophys_experiment_id': int(session.ophys_experiment_id)}
-        for col in df.columns:
-            entry.update({col: df[col].values.tolist()})
-        entry = clean_and_timestamp(entry)
+    update_or_create(
+        collection,
+        entry,
+        keys_to_check = ['ophys_experiment_id'],
+        force_write = force_write
+    )
 
-        update_or_create(
-            vb['ophys_data']['stimulus_presentations'],
-            entry,
-            keys_to_check = ['ophys_experiment_id']
-        )
-
-    else:
-        pass
-#         print('experiment {} already in table'.format(session.ophys_experiment_id))
     vb.close()
 
 
