@@ -67,16 +67,16 @@ def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name'], get_
 
     # Group by conditions
     rdf = response_df.copy()
-    if 'dff_trace' not in rdf.columns:
+    if ('dff_trace' not in rdf.columns) and ('dff' not in rdf.colums):
         rdf['dff_trace'] = np.nan
     mdf = rdf.groupby(conditions).apply(get_mean_sem_trace)
     mdf = mdf[['mean_response', 'sem_response', 'mean_trace', 'sem_trace', 'mean_responses']]
-    mdf = mdf.reset_index()
+    # mdf = mdf.reset_index()
 
     if get_pref_stim: # need to implement a grouped version of this!
     # Add preferred stimulus if there is an image column
-        if ('image_name' in conditions) or ('change_image_name' in conditions):
-            mdf = annotate_mean_df_with_pref_stim(mdf)
+        if (conditions[-1] == 'image_name') or (conditions[-1] =='change_image_name'):
+            mdf = annotate_mean_df_with_pref_stim(mdf, conditions)
 
     # What fraction of individual responses were significant?
     fraction_significant_responses = rdf.groupby(conditions).apply(get_fraction_significant_responses)
@@ -108,7 +108,7 @@ def get_mean_sem_trace(group):
                       'mean_responses': mean_responses})
 
 
-def annotate_mean_df_with_pref_stim(mean_df):
+def annotate_mean_df_with_pref_stim(mean_df, conditions):
     '''
         Computes the preferred stimulus for each cell/trial or cell/flash combination. Preferred image is computed by seeing which image evoked the largest average mean_response across all images. 
 
@@ -123,33 +123,33 @@ def annotate_mean_df_with_pref_stim(mean_df):
     '''
 
     mdf = mean_df.copy()
-    mdf = mdf.reset_index()
-    # Are we dealing with flash_response or trial_response
-    if 'image_name' in mdf.keys():
-        image_name = 'image_name'
-    else:
-        image_name = 'change_image_name'
+    # mdf = mdf.reset_index()
+    # image name should be the last condition for this to work
+    image_name = conditions[-1]
+
+    group_conditions = conditions[:-1]
+    group = mdf.reset_index().groupby(group_conditions)
 
     mdf['pref_stim'] = False
-    # Iterate through cells in df       
-    for cell in mdf['cell_specimen_id'].unique():
-        mc = mdf[(mdf['cell_specimen_id'] == cell)]
-        mc = mc[mc[image_name] != 'omitted']
-        temp = mc[(mc.mean_response == np.max(mc.mean_response.values))][image_name].values
-        if len(temp) > 0:  # need this test if the mean_response was nan
-            pref_image = temp[0]
-            # PROBLEM, this is slow, and sets on slice, better to use mdf.at[test, 'pref_stim']
-            row = mdf[(mdf['cell_specimen_id'] == cell) & (mdf[image_name] == pref_image)].index
-            mdf.loc[row, 'pref_stim'] = True
+    for i,x in group:
+        x = x[x.image_name!='omitted']
+        ind = np.where(x['mean_response']==np.amax(x['mean_response']))[0][0]
+        pref_stim = x['image_name'].values[ind]
+        if type(i) == int:
+            mdf.at[(i, pref_stim), 'pref_stim'] = True
+        elif len(i) == 2:
+            mdf.at[(i[0], i[1], pref_stim), 'pref_stim'] = True
+        elif len(i) == 3:
+            mdf.at[(i[0], i[1], i[2], pref_stim), 'pref_stim'] = True
+        elif len(i) == 4:
+            mdf.at[(i[0], i[1], i[2], i[3], pref_stim), 'pref_stim'] = True
+    # mdf.reset_index(inplace=True)
 
-    # Test to ensure preferred stimulus is unique for each cell
-    for cell in mdf.reset_index()['cell_specimen_id'].unique():
-        if image_name == 'image_name':
-            assert len(
-                mdf.reset_index().set_index('cell_specimen_id').loc[cell].query('pref_stim').image_name.unique()) == 1
-        else:
-            assert len(mdf.reset_index().set_index('cell_specimen_id').loc[cell].query(
-                'pref_stim').change_image_name.unique()) == 1
+    # this doesnt work with multi-index with cell and experiment_id
+    # # Test to ensure preferred stimulus is unique for each cell
+    # for cell in mdf.reset_index()['cell_specimen_id'].unique():
+    #     assert len(mdf.reset_index().set_index('cell_specimen_id').loc[cell].query('pref_stim')[image_name].unique()) == 1
+    #
     return mdf
 
 
