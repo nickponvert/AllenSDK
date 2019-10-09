@@ -210,7 +210,7 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         stimulus_timestamps_no_monitor_delay = self.get_sync_data()['stimulus_times_no_delay']
         lick_frames = data['items']['behavior']['lick_sensors'][0]['lick_events']
         lick_times = [stimulus_timestamps_no_monitor_delay[frame] for frame in lick_frames]
-        return pd.DataFrame({'time': lick_times})
+        return pd.DataFrame({'timestamps': lick_times})
 
     @memoize
     def get_rewards(self):
