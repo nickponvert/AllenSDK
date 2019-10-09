@@ -196,10 +196,21 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         )
         return image_index_names
 
+    # We can't do this because there is a bunch of data without this data stream correctly recorded.
+    #  @memoize
+    #  def get_licks(self):
+    #      lick_times = self.get_sync_data()['lick_times']
+    #      return pd.DataFrame({'timestamps': lick_times})
+
     @memoize
     def get_licks(self):
-        lick_times = self.get_sync_data()['lick_times']
-        return pd.DataFrame({'timestamps': lick_times})
+        # Get licks from pickle file instead of sync
+        behavior_stimulus_file = self.get_behavior_stimulus_file()
+        data = pd.read_pickle(behavior_stimulus_file)
+        stimulus_timestamps_no_monitor_delay = self.get_sync_data()['stimulus_times_no_delay']
+        lick_frames = data['items']['behavior']['lick_sensors'][0]['lick_events']
+        lick_times = [stimulus_timestamps_no_monitor_delay[frame] for frame in lick_frames]
+        return pd.DataFrame({'time': lick_times})
 
     @memoize
     def get_rewards(self):
