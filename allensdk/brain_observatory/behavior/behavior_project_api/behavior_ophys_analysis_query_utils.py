@@ -229,26 +229,24 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
 
     vb.close()
 
-def write_eventlocked_traces_to_collection(session, server='visual_behavior_data', force_write=False):
+def write_eventlocked_traces_to_collection(session, server='visual_behavior_data', force_write=False, bulk_write=True):
 
     vb = Database(server)
+    t0 =time.time()
 
-    expected_time_per_iteration = 0.01
-    iterations_to_check = 1000
-    
+
     collection = vb['ophys_data']['stimulus_response_traces']
     oeid = int(session.ophys_experiment_id)
     if force_write:
         collection.delete_many({'ophys_experiment_id':oeid})
-
+    print('done deleting at {} s'.format(time.time()-t0))
     stim_response_xr_stacked = session.stimulus_response_xr['eventlocked_traces'].stack(multi_index=('cell_specimen_id','stimulus_presentations_id'))
     print("uploading stimulus response traces for oeid: {}\n".format(oeid))
-    t0 = time.time()
+    
+    if bulk_write:
+        list_of_dicts = []
+
     for ii,trace_ind in enumerate(list(range(stim_response_xr_stacked.shape[1]))):
-        if ii == iterations_to_check:
-            # just to be sure this isn't running absurdly slow:
-            if time.time()-t0>iterations_to_check*expected_time_per_iteration:
-                assert False, "this is too slow"
 
         trace_xr = stim_response_xr_stacked[:, trace_ind]
         document = {
@@ -261,13 +259,21 @@ def write_eventlocked_traces_to_collection(session, server='visual_behavior_data
         }
         document = clean_and_timestamp(document)
 
-        update_or_create(
-            collection,
-            document,
-            keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id'],
-            force_write = force_write
-        )
-
+        if bulk_write == False:
+            update_or_create(
+                collection,
+                document,
+                keys_to_check = ['ophys_experiment_id','cell_specimen_id','stimulus_presentations_id'],
+                force_write = force_write
+            )
+        else:
+            list_of_dicts.append(
+                document
+            )
+    print('done building list at {} s'.format(time.time()-t0))
+    if bulk_write:
+        collection.insert_many(list_of_dicts)
+    print('done writing at {} s'.format(time.time()-t0))
     vb.close()
 
 
