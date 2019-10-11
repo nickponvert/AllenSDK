@@ -229,6 +229,7 @@ def write_stimulus_response_to_collection(session, server='visual_behavior_data'
 
     vb.close()
 
+from tqdm import tqdm
 def write_eventlocked_traces_to_collection(session, server='visual_behavior_data', force_write=False, bulk_write=True):
 
     vb = Database(server)
@@ -246,7 +247,7 @@ def write_eventlocked_traces_to_collection(session, server='visual_behavior_data
     if bulk_write:
         list_of_dicts = []
 
-    for ii,trace_ind in enumerate(list(range(stim_response_xr_stacked.shape[1]))):
+    for ii,trace_ind in tqdm(enumerate(list(range(stim_response_xr_stacked.shape[1])))):
 
         trace_xr = stim_response_xr_stacked[:, trace_ind]
         document = {
@@ -407,3 +408,149 @@ def get_metrics(query=None, server='visual_behavior_data'):
     df['cell_specimen_id'] = df['cell_specimen_id'].astype(int)
     vb.close()
     return df
+
+
+################ Nick new version 2019-10-11 ###################
+
+import numpy as np
+import xarray as xr
+from tqdm import tqdm
+from allensdk.brain_observatory.behavior import behavior_project_cache as bpc
+import pandas as pd
+manifest_path = "/allen/programs/braintv/workgroups/nc-ophys/visual_behavior/SFN_2019/cache_with_extra_inhibitory/behavior_project_manifest.json"
+cache = bpc.InternalCacheFromLims(manifest=manifest_path)
+sessions = cache.get_sessions()
+scientifica_sessions = sessions[(sessions['equipment_name']!='MESO.1')&(~pd.isnull(sessions['stage_name']))]
+
+## Make the connection to the database
+from allensdk.brain_observatory.behavior.behavior_project_api import behavior_ophys_analysis_query_utils as qu
+from pymongo import MongoClient
+
+#  conn = MongoClient('mongodb://localhost:9999')
+#  session = cache.get_session(scientifica_sessions.iloc[0]['ophys_session_id'])
+
+def upload_session_stimulus_response(session):
+    conn = Database('visual_behavior_data')
+    sxr = session.stimulus_response_xr
+    oeid = session.ophys_experiment_id
+    all_dicts = []
+    for csid in sxr.coords['cell_specimen_id'].values:
+        document = {
+            'ophys_experiment_id':int(oeid),
+            'cell_specimen_id':int(csid),
+            'response_data':sxr.loc[{'cell_specimen_id':csid}].to_dict()
+        }
+        all_dicts.append(document)
+    conn['ophys_data']['stimulus_response'].insert_many(all_dicts)
+
+def upload_session_omission_response(session):
+    conn = Database('visual_behavior_data')
+    oxr = session.omission_response_xr
+    oeid = session.ophys_experiment_id
+    all_dicts = []
+    for csid in oxr.coords['cell_specimen_id'].values:
+        document = {
+            'ophys_experiment_id':int(oeid),
+            'cell_specimen_id':int(csid),
+            'response_data':oxr.loc[{'cell_specimen_id':csid}].to_dict()
+        }
+        all_dicts.append(document)
+    conn['ophys_data']['omission_response'].insert_many(all_dicts)
+
+def load_session_stimulus_response_xr(oeid):
+    query = {'ophys_experiment_id':int(oeid)}
+    res = conn['ophys_data']['stimulus_response'].find(query)
+    stimulus_response_xr = xr.concat([xr.Dataset.from_dict(r['response_data']) for r in res_list], dim='cell_specimen_id')
+
+def upload_session_stimulus_presentations(session):
+    conn = Database('visual_behavior_data')
+    oeid = session.ophys_experiment_id
+    extended_stim = session.extended_stimulus_presentations
+    extended_stim = extended_stim.drop(columns=['licks', 'rewards'])
+    extended_stim_xr = xr.Dataset.from_dataframe(extended_stim)
+    document = {
+        'ophys_experiment_id':int(oeid),
+        'stimulus_data':extended_stim_xr.to_dict()
+    }
+    conn['ophys_data']['stimulus_presentations'].insert_one(document)
+
+def load_session_stimulus_presentations_xr(oeid):
+    query = {'ophys_experiment_id':int(oeid)}
+    res = conn['ophys_data']['stimulus_presentations'].find_one(query)
+    stimulus_response_xr = xr.Dataset.from_dict(res['stimulus_data'])
+    return stimulus_response_xr
+
+import time
+def upload_session_by_ind(session_ind):
+    t0=time.time()
+    conn = Database('visual_behavior_data')
+
+    session_row = manifest.iloc[session_ind]
+    session = cache.get_session(session_row['ophys_session_id'])
+    oeid = session.ophys_experiment_id
+
+    #  query = {'ophys_experiment_id':int(oeid)}
+    #  res = conn['ophys_data']['stimulus_response'].find(query)
+    #  if res is None:
+    print("upload session stimulus response: {}".format(session_ind))
+    upload_session_stimulus_response(session)
+    #  else:
+    #      print("Skipping stimulus response")
+
+    #  query = {'ophys_experiment_id':int(oeid)}
+    #  res = conn['ophys_data']['stimulus_presentations'].find(query)
+    #  if res is None:
+    print("upload session stimulus presentations: {}".format(session_ind))
+    upload_session_stimulus_presentations(session)
+    #  else:
+    #      print("Skipping stimulus presentations")
+    print("that took {} sec".format(time.time()-t0))
+    return session_ind
+
+case=0
+if case==0:
+    errors = []
+    manifest=scientifica_sessions
+    for session_ind in range(len(scientifica_sessions))[136:]:
+        try:
+            upload_session_by_ind(session_ind)
+        except Exception:
+            errors.append(session_ind)
+            continue
+
+if case==1:
+    ## Check data coverage
+    conn = Database('visual_behavior_data')
+    stim_response_not_found = []
+    stim_response_duplicated = []
+    stim_presentations_not_found = []
+    stim_presentations_duplicated = []
+    sdk_errors = []
+    manifest=scientifica_sessions
+    for session_ind in range(len(scientifica_sessions)):
+        session_row = manifest.iloc[session_ind]
+        session = cache.get_session(session_row['ophys_session_id'])
+        oeid = session.ophys_experiment_id
+        print("Checking oeid {}".format(oeid))
+        try:
+            csids = session.cell_specimen_table.index.values
+        except Exception:
+            sdk_errors.append(oeid)
+
+        #Check each csid for stimulus response
+        for csid in csids:
+            query = {'ophys_experiment_id':int(oeid),
+                     'cell_specimen_id':int(csid)}
+            res = list(conn['ophys_data']['stimulus_response'].find(query))
+            if res is None:
+                stim_response_not_found.append(query)
+            elif len(res)>1:
+                stim_response_duplicated.append(query)
+
+        # Check the session for stimulus presentations
+        query = {'ophys_experiment_id':int(oeid)}
+        res = list(conn['ophys_data']['stimulus_presentations'].find(query))
+        if res is None:
+            stim_presentations_not_found.append(query)
+        elif len(res)>1:
+            stim_presentations_duplicated.append(query)

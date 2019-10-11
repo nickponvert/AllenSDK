@@ -275,7 +275,7 @@ def omission_response_xr(session, response_analysis_params=None):
     )
 
     response_range = [0, response_analysis_params['response_window_duration_seconds']]
-    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds']]
+    baseline_range = [-1*response_analysis_params['baseline_window_duration_seconds'],0]
 
     mean_response = eventlocked_traces_xr.loc[
         {'eventlocked_timestamps':slice(*response_range)}
