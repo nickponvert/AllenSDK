@@ -506,51 +506,51 @@ def upload_session_by_ind(session_ind):
     #      print("Skipping stimulus presentations")
     print("that took {} sec".format(time.time()-t0))
     return session_ind
-
-case=0
-if case==0:
-    errors = []
-    manifest=scientifica_sessions
-    for session_ind in range(len(scientifica_sessions))[136:]:
-        try:
-            upload_session_by_ind(session_ind)
-        except Exception:
-            errors.append(session_ind)
-            continue
-
-if case==1:
-    ## Check data coverage
-    conn = Database('visual_behavior_data')
-    stim_response_not_found = []
-    stim_response_duplicated = []
-    stim_presentations_not_found = []
-    stim_presentations_duplicated = []
-    sdk_errors = []
-    manifest=scientifica_sessions
-    for session_ind in range(len(scientifica_sessions)):
-        session_row = manifest.iloc[session_ind]
-        session = cache.get_session(session_row['ophys_session_id'])
-        oeid = session.ophys_experiment_id
-        print("Checking oeid {}".format(oeid))
-        try:
-            csids = session.cell_specimen_table.index.values
-        except Exception:
-            sdk_errors.append(oeid)
-
-        #Check each csid for stimulus response
-        for csid in csids:
-            query = {'ophys_experiment_id':int(oeid),
-                     'cell_specimen_id':int(csid)}
-            res = list(conn['ophys_data']['stimulus_response'].find(query))
-            if res is None:
-                stim_response_not_found.append(query)
-            elif len(res)>1:
-                stim_response_duplicated.append(query)
-
-        # Check the session for stimulus presentations
-        query = {'ophys_experiment_id':int(oeid)}
-        res = list(conn['ophys_data']['stimulus_presentations'].find(query))
-        if res is None:
-            stim_presentations_not_found.append(query)
-        elif len(res)>1:
-            stim_presentations_duplicated.append(query)
+#  
+#  case=0
+#  if case==0:
+#      errors = []
+#      manifest=scientifica_sessions
+#      for session_ind in range(len(scientifica_sessions))[136:]:
+#          try:
+#              upload_session_by_ind(session_ind)
+#          except Exception:
+#              errors.append(session_ind)
+#              continue
+#  
+#  if case==1:
+#      ## Check data coverage
+#      conn = Database('visual_behavior_data')
+#      stim_response_not_found = []
+#      stim_response_duplicated = []
+#      stim_presentations_not_found = []
+#      stim_presentations_duplicated = []
+#      sdk_errors = []
+#      manifest=scientifica_sessions
+#      for session_ind in range(len(scientifica_sessions)):
+#          session_row = manifest.iloc[session_ind]
+#          session = cache.get_session(session_row['ophys_session_id'])
+#          oeid = session.ophys_experiment_id
+#          print("Checking oeid {}".format(oeid))
+#          try:
+#              csids = session.cell_specimen_table.index.values
+#          except Exception:
+#              sdk_errors.append(oeid)
+#  
+#          #Check each csid for stimulus response
+#          for csid in csids:
+#              query = {'ophys_experiment_id':int(oeid),
+#                       'cell_specimen_id':int(csid)}
+#              res = list(conn['ophys_data']['stimulus_response'].find(query))
+#              if res is None:
+#                  stim_response_not_found.append(query)
+#              elif len(res)>1:
+#                  stim_response_duplicated.append(query)
+#  
+#          # Check the session for stimulus presentations
+#          query = {'ophys_experiment_id':int(oeid)}
+#          res = list(conn['ophys_data']['stimulus_presentations'].find(query))
+#          if res is None:
+#              stim_presentations_not_found.append(query)
+#          elif len(res)>1:
+#              stim_presentations_duplicated.append(query)
