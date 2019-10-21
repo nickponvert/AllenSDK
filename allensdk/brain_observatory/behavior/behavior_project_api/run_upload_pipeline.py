@@ -8,7 +8,7 @@ python_file = '/allen/programs/braintv/workgroups/nc-ophys/nick.ponvert/src/Alle
 jobdir = '/allen/programs/braintv/workgroups/nc-ophys/nick.ponvert/cluster_jobs/20191008_db_upload'
 
 job_settings = {'queue': 'braintv',
-                'mem': '15g',
+                'mem': '2g',
                 'walltime': '4:00:00',
                 'ppn':1,
                 'jobdir': jobdir,
@@ -28,6 +28,6 @@ for ind_session in range(len(scientifica_sessions)):
         python_executable='/home/nick.ponvert/anaconda3/envs/allen/bin/python',
         python_args=ind_session,
         conda_env=None,
-        jobname = 'upload_session_{}'.format(ind_session),
+        jobname = 'upload_session_stims_{}'.format(ind_session),
         **job_settings
     ).run(dryrun=False)

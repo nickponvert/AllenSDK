@@ -12,14 +12,15 @@ sessions = cache.get_sessions()
 # It is important that this dataframe of sessions is the same between this upload script and the runner. We should fix this to be independent.
 scientifica_sessions = sessions[(sessions['equipment_name']!='MESO.1')&(~pd.isnull(sessions['stage_name']))]
 session_entry = scientifica_sessions.iloc[ind_session]
+print(session_entry)
 
 print(session_entry['ophys_session_id'])
 
 def write_to_mongo(session_entry):
-   qu.write_to_manifest_collection(dict(session_entry))
+   #  qu.write_to_manifest_collection(dict(session_entry))
    session = cache.get_session(session_entry['ophys_session_id'])
-   qu.write_eventlocked_traces_to_collection(session)
-   qu.write_stimulus_response_to_collection(session)
-   qu.write_stimulus_presentations_to_collection(session)
+   qu.write_eventlocked_traces_to_collection(session, force_write=True)
+   #  qu.write_stimulus_response_to_collection(session, force_write=True)
+   #  qu.write_stimulus_presentations_to_collection(session, force_write=True)
 
 write_to_mongo(session_entry)
