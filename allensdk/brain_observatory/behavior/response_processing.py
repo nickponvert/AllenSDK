@@ -485,6 +485,72 @@ def get_flash_response_df():
     fdf = rp.stimulus_response_df(
         rp.stimulus_response_xr(session, response_analysis_params=rp.get_default_flash_response_params()))
 
+### Hierarchical resampling
+from copy import copy
+class HierarchicalDataFrame():
+    def __init__(self, df, hierarchy_levels):
+        self.hierarchy_levels = hierarchy_levels
+        self.root = HierarchicalDataFrameNode(df, hierarchy_levels)
+        
+    def resample(self, n_reps):
+        for ind_rep in range(n_reps):
+            replicate = copy(self)
+            replicate.root=resample_recursive(replicate.root)
+            yield replicate.get_df_from_leaves()
+            
+    def get_df_from_leaves(self):
+        '''
+        Build full dataframe from leaf dfs
+        '''
+        leaf_dfs_list = []
+        get_leaf_dfs(self.root, leaf_dfs_list)
+        return pd.concat(leaf_dfs_list)
+    
+def get_leaf_dfs(start_node, leaf_dfs_list):
+    '''
+    Starting from a node, go to the leaves and append each leaf df to a running list
+    '''
+    if len(start_node.children)==0:
+        leaf_dfs_list.append(start_node.df)
+    else:
+        for child in start_node.children:
+            get_leaf_dfs(child, leaf_dfs_list)
+            
+class HierarchicalDataFrameNode():
+    def __init__(self, df, hierarchy_levels, ind_level=0, value=None):
+        self.df = df
+        self.value = value
+        self.hierarchy_levels = hierarchy_levels
+        self.ind_level = ind_level       
+        
+        self.level = hierarchy_levels[ind_level]
+        self.unique_vals = self.df[self.level].unique()
+        self.children = []
+        
+        if ind_level < len(hierarchy_levels)-1:
+            self.make_children()
+    
+    def make_children(self):
+        for unique_val in self.unique_vals:
+            df_this_val = self.df.query('{} == {}'.format(self.level, unique_val))
+            self.children.append(HierarchicalDataFrameNode(df_this_val, self.hierarchy_levels, self.ind_level+1, value=unique_val))
+
+def resample_recursive(start_node):
+    n_copy = copy(start_node)
+    if len(start_node.children)>0:
+        children_rep = [resample_recursive(deepcopy(n)) for n in np.random.choice(start_node.children, size=len(start_node.children))]
+        n_copy.children = children_rep
+    else:
+        inds_to_use = np.random.choice(range(len(start_node.df)), size=len(start_node.df))
+        df_copy = start_node.df.iloc[inds_to_use].copy()
+        n_copy.df = df_copy
+    return n_copy
+
+def print_hierarchy(start_node, ind_level=0):
+    for child in start_node.children:
+        print('{}{}:{}, {}'.format(''.join(['    ']*ind_level), start_node.level, child.value, child.df.index.values))
+        print_hierarchy(child, ind_level+1)
+
 if __name__=="__main__":
     import time
     from allensdk.brain_observatory.behavior import behavior_project_cache as bpc
