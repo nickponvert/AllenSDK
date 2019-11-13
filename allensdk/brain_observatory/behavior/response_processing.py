@@ -402,6 +402,7 @@ def to_df(response_xr):
     df_pre = response_xr.drop(['eventlocked_traces', 'eventlocked_timestamps']).to_dataframe().reset_index()
     df_pre.insert(loc=1, column='dff_trace', value=traces_list)
     df_pre.insert(loc=2, column='dff_trace_timestamps', value=trace_timestamps_list)
+    return df_pre
 
 
 
@@ -489,32 +490,34 @@ def get_flash_response_df():
 from copy import copy
 class HierarchicalDataFrame():
     def __init__(self, df, hierarchy_levels):
+        self.df = df
+        self.df['iloc'] = range(len(df))
         self.hierarchy_levels = hierarchy_levels
-        self.root = HierarchicalDataFrameNode(df, hierarchy_levels)
+        # only need the hierarchy cols and the iloc in the nodes
+        node_cols = hierarchy_levels + ['iloc']
+        self.root = HierarchicalDataFrameNode(self.df[node_cols], hierarchy_levels)
         
     def resample(self, n_reps):
         for ind_rep in range(n_reps):
             replicate = copy(self)
             replicate.root=resample_recursive(replicate.root)
-            yield replicate.get_df_from_leaves()
+            yield replicate
             
     def get_df_from_leaves(self):
         '''
-        Build full dataframe from leaf dfs
+        Get the row ilocs from all the leaves and return the replicate dataframe
         '''
-        leaf_dfs_list = []
-        get_leaf_dfs(self.root, leaf_dfs_list)
-        return pd.concat(leaf_dfs_list)
+        leaf_dfs_iloc_list = []
+        get_leaf_dfs_by_iloc(self.root, leaf_dfs_iloc_list)
+        return self.df.iloc[leaf_dfs_iloc_list]
     
-def get_leaf_dfs(start_node, leaf_dfs_list):
-    '''
-    Starting from a node, go to the leaves and append each leaf df to a running list
-    '''
+def get_leaf_dfs_by_iloc(start_node, leaf_dfs_iloc_list):
     if len(start_node.children)==0:
-        leaf_dfs_list.append(start_node.df)
+        leaf_dfs_iloc_list.extend(start_node.df['iloc'].values)
     else:
         for child in start_node.children:
-            get_leaf_dfs(child, leaf_dfs_list)
+            get_leaf_dfs_by_iloc(child, leaf_dfs_iloc_list)
+
             
 class HierarchicalDataFrameNode():
     def __init__(self, df, hierarchy_levels, ind_level=0, value=None):
@@ -538,7 +541,7 @@ class HierarchicalDataFrameNode():
 def resample_recursive(start_node):
     n_copy = copy(start_node)
     if len(start_node.children)>0:
-        children_rep = [resample_recursive(deepcopy(n)) for n in np.random.choice(start_node.children, size=len(start_node.children))]
+        children_rep = [resample_recursive(copy(n)) for n in np.random.choice(start_node.children, size=len(start_node.children))]
         n_copy.children = children_rep
     else:
         inds_to_use = np.random.choice(range(len(start_node.df)), size=len(start_node.df))
