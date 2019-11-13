@@ -32,7 +32,7 @@ def get_stimulus_presentations(data, stimulus_timestamps):
     # workaround to rename columns to harmonize with visual coding and rebase timestamps to sync time
     stimulus_table.insert(loc=0, column='flash_number', value=np.arange(0, len(stimulus_table)))
     stimulus_table = stimulus_table.rename(columns={'frame': 'start_frame', 'time': 'start_time', 'flash_number':'stimulus_presentations_id'})
-    stimulus_table.start_time = [stimulus_timestamps[start_frame] for start_frame in stimulus_table.start_frame.values]
+    stimulus_table.start_time = [stimulus_timestamps[int(start_frame)] for start_frame in stimulus_table.start_frame.values]
     end_time = []
     for end_frame in stimulus_table.end_frame.values:
         if not np.isnan(end_frame):
@@ -90,18 +90,34 @@ def get_stimulus_templates(pkl):
 
 def get_stimulus_metadata(pkl):
 
-    images = get_images_dict(pkl)
-    stimulus_index_df = pd.DataFrame(images['image_attributes'])
-    image_set_filename = convert_filepath_caseinsensitive(images['metadata']['image_set'])
-    stimulus_index_df['image_set'] = IMAGE_SETS_REV[image_set_filename]
+    if 'images' in pkl["items"]["behavior"]["stimuli"]:
+        images = get_images_dict(pkl)
+        stimulus_index_df = pd.DataFrame(images['image_attributes'])
+        image_set_filename = convert_filepath_caseinsensitive(images['metadata']['image_set'])
+        stimulus_index_df['image_set'] = IMAGE_SETS_REV[image_set_filename]
 
-    # Add an entry for omitted stimuli
-    omitted_df = pd.DataFrame({'image_category':['omitted'],
-                               'image_name':['omitted'],
-                               'image_set':['omitted'],
-                               'image_index':[stimulus_index_df['image_index'].max()+1]})
-    stimulus_index_df = stimulus_index_df.append(omitted_df, ignore_index=True, sort=False)
-    stimulus_index_df.set_index(['image_index'], inplace=True, drop=True)
+        # Add an entry for omitted stimuli
+        omitted_df = pd.DataFrame({'image_category':['omitted'],
+                                   'image_name':['omitted'],
+                                   'image_set':['omitted'],
+                                   'image_index':[stimulus_index_df['image_index'].max()+1]})
+        stimulus_index_df = stimulus_index_df.append(omitted_df, ignore_index=True, sort=False)
+        stimulus_index_df.set_index(['image_index'], inplace=True, drop=True)
+    else:
+        stim_groups = pkl['items']['behavior']['stimuli']['grating']['stim_groups']
+        image_sets = []
+        image_names = []
+        for group in stim_groups.keys():
+            for ori in stim_groups[group][1]:
+                image_sets.append(group)
+                image_names.append('gratings_{}'.format(ori))
+        image_groups = image_names
+        stimulus_index_df = pd.DataFrame({
+            'image_name': image_names,
+            'image_group': image_groups,
+            'image_set': image_sets
+        })
+        stimulus_index_df.index.name = 'image_index'
     return stimulus_index_df
 
 
@@ -196,11 +212,6 @@ def get_visual_stimuli_df(data, time):
                 })
 
     visual_stimuli_df = pd.DataFrame(data=visual_stimuli_data)
-
-    # ensure that every rising edge in the draw_log is accounted for in the visual_stimuli_df
-    #  draw_log_rising_edges = len(np.where(np.diff(stimuli['images']['draw_log'])==1)[0])
-    #  discrete_flashes = len(visual_stimuli_data)
-    #  assert draw_log_rising_edges == discrete_flashes, "the number of rising edges in the draw log is expected to match the number of flashes in the stimulus table"
 
     # Add omitted flash info:
     if 'omitted_flash_frame_log' in data['items']['behavior']:
