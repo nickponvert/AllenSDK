@@ -395,6 +395,7 @@ def annotate_flash_rolling_metrics(stimulus_presentations, win_dur=320, win_type
     # Get Bout Rate / second
     stimulus_presentations['bout_rate'] = stimulus_presentations['bout_start'].rolling(win_dur, min_periods=1,
                                                                                        win_type=win_type).mean() / .75
+    return stimulus_presentations
 
 
 def classify_by_flash_metrics(stimulus_presentations, lick_threshold=0.1, reward_threshold=2 / 80, use_bouts=True):
@@ -443,6 +444,11 @@ def get_metrics(sp, licks, rewards):
     classify_by_flash_metrics(sp)
     return sp
 
+def add_prior_image_to_stimulus_presentations(stimulus_presentations):
+    prior_image_name = [None]
+    prior_image_name = prior_image_name + list(stimulus_presentations.image_name.values[:-1])
+    stimulus_presentations['prior_image_name'] = prior_image_name
+    return stimulus_presentations
 
 def get_extended_stimulus_presentations(stimulus_presentations_df,
                                         licks,
@@ -451,8 +457,9 @@ def get_extended_stimulus_presentations(stimulus_presentations_df,
                                         running_speed_df):
 
     stimulus_presentations_df = stimulus_presentations_df.copy()
-    flash_times = stimulus_presentations_df["start_time"].values
+    stimulus_presentations_df = add_prior_image_to_stimulus_presentations(stimulus_presentations_df)
 
+    flash_times = stimulus_presentations_df["start_time"].values
     lick_times = licks['timestamps'].values
     reward_times = rewards['timestamps'].values
     # Time from last other for each flash
@@ -562,10 +569,12 @@ def get_extended_stimulus_presentations(stimulus_presentations_df,
     stimulus_presentations_df['flash_after_omitted'] = np.hstack((False, stimulus_presentations_df.omitted.values[:-1]))
     stimulus_presentations_df['flash_after_change'] = np.hstack((False, stimulus_presentations_df.change.values[:-1]))
     # add licking responses
-    stimulus_presentations_df = add_response_latency(stimulus_presentations_df)
-    stimulus_presentations_df = add_inter_flash_lick_diff_to_stimulus_presentations(stimulus_presentations_df)
-    stimulus_presentations_df = add_first_lick_in_bout_to_stimulus_presentations(stimulus_presentations_df)
-    stimulus_presentations_df = get_consumption_licks(stimulus_presentations_df)
+    # stimulus_presentations_df = add_response_latency(stimulus_presentations_df)
+    # stimulus_presentations_df = add_inter_flash_lick_diff_to_stimulus_presentations(stimulus_presentations_df)
+    # stimulus_presentations_df = add_first_lick_in_bout_to_stimulus_presentations(stimulus_presentations_df)
+    # stimulus_presentations_df = get_consumption_licks(stimulus_presentations_df)
     stimulus_presentations_df = get_metrics(stimulus_presentations_df, licks, rewards)
+    # reward rate, lick rate, bout rate
+    # stimulus_presentations_df = annotate_flash_rolling_metrics(stimulus_presentations_df, win_dur=320, win_type='triang')
 
     return stimulus_presentations_df
