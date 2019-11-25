@@ -367,3 +367,60 @@ def compute_lifetime_sparseness(image_responses):
     ls = ((1 - (1 / N) * ((np.power(image_responses.sum(axis=0), 2)) / (np.power(image_responses, 2).sum(axis=0)))) / (
         1 - (1 / N)))
     return ls
+
+def plot_mean_trace_from_mean_df(trace, sem, frame_rate=31., ylabel='dF/F', legend_label=None, color='k', interval_sec=1,
+                                 xlims=[-0.5, 0.75], ax=None):
+    xlim = [0, xlims[1] + np.abs(xlims[0])]
+    if ax is None:
+        fig, ax = plt.subplots()
+    times = np.arange(0, len(trace), 1)
+    ax.plot(trace, label=legend_label, linewidth=3, color=color)
+    ax.fill_between(times, trace + sem, trace - sem, alpha=0.5, color=color)
+
+    xticks, xticklabels = get_xticks_xticklabels(trace, frame_rate, interval_sec, window=xlims)
+    ax.set_xticks(xticks)
+    if interval_sec >= 1:
+        ax.set_xticklabels([int(x) for x in xticklabels])
+    else:
+        ax.set_xticklabels(xticklabels)
+    ax.set_xlim(xlim[0] * int(frame_rate), xlim[1] * int(frame_rate))
+    ax.set_xlabel('time after change (sec)')
+    ax.set_ylabel(ylabel)
+    sns.despine(ax=ax)
+    return ax
+
+def plot_flashes_on_trace(ax, trial_type=None, omitted=False, flashes=False, window=[-4, 4], alpha=0.15,
+                          facecolor='gray', ophys_frame_rate=31.):
+    frame_rate = ophys_frame_rate
+    stim_duration = .25
+    blank_duration = .5
+    change_frame = np.abs(window[0]) * frame_rate
+    end_frame = (np.abs(window[0]) + window[1]) * frame_rate
+    interval = blank_duration + stim_duration
+    if omitted:
+        array = np.arange((change_frame + interval), end_frame, interval * frame_rate)
+        array = array[1:]
+    else:
+        array = np.arange(change_frame, end_frame, interval * frame_rate)
+    for i, vals in enumerate(array):
+        amin = array[i]
+        amax = array[i] + (stim_duration * frame_rate)
+        ax.axvspan(amin, amax, facecolor=facecolor, edgecolor='none', alpha=alpha, linewidth=0, zorder=1)
+    if trial_type == 'go':
+        alpha = alpha * 3
+    else:
+        alpha
+    array = np.arange(change_frame - ((blank_duration) * frame_rate), 0, -interval * frame_rate)
+    for i, vals in enumerate(array):
+        amin = array[i]
+        amax = array[i] - (stim_duration * frame_rate)
+        ax.axvspan(amin, amax, facecolor=facecolor, edgecolor='none', alpha=alpha, linewidth=0, zorder=1)
+    return ax
+
+def get_colors_for_sessions():
+    reds = sns.color_palette('Reds_r', 6)[:5][::2]
+    blues = sns.color_palette('Blues_r', 6)[:5][::2]
+    return reds+blues
+
+def get_session_labels():
+    return ['A1', 'A2', 'A3', 'B1', 'B2', 'B3']
