@@ -333,8 +333,10 @@ def annotate_licks(licks, rewards, bout_threshold=0.7):
     licks['post_ili'] = np.concatenate([np.diff(licks.timestamps.values), [np.nan]])
     licks['rewarded'] = False
     for index, row in rewards.iterrows():
-        mylick = np.where(licks.timestamps <= row.timestamps)[0][-1]
-        licks.at[mylick, 'rewarded'] = True
+        licks_before_reward = np.where(licks.timestamps <= row.timestamps)[0]
+        if len(licks_before_reward) > 0:
+            mylick = licks_before_reward[-1]
+            licks.at[mylick, 'rewarded'] = True
     licks['bout_start'] = licks['pre_ili'] > bout_threshold
     licks['bout_end'] = licks['post_ili'] > bout_threshold
     licks.at[licks['pre_ili'].apply(np.isnan), 'bout_start'] = True
