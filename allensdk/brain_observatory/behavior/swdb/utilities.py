@@ -67,7 +67,7 @@ def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name'], get_
 
     # Group by conditions
     rdf = response_df.copy()
-    if ('dff_trace' not in rdf.columns) and ('dff' not in rdf.colums):
+    if ('dff_trace' not in rdf.columns) and ('dff' not in rdf.columns):
         rdf['dff_trace'] = np.nan
     mdf = rdf.groupby(conditions).apply(get_mean_sem_trace)
     mdf = mdf[['mean_response', 'sem_response', 'mean_trace', 'sem_trace', 'mean_responses']]
@@ -75,13 +75,13 @@ def get_mean_df(response_df, conditions=['cell_specimen_id', 'image_name'], get_
 
     if get_pref_stim: # need to implement a grouped version of this!
     # Add preferred stimulus if there is an image column
-        if (conditions[-1] == 'image_name') or (conditions[-1] =='change_image_name'):
+        if (conditions[-1] == 'image_name') or (conditions[-1] =='change_image_name') or (conditions[-1] =='prior_image_name'):
             mdf = annotate_mean_df_with_pref_stim(mdf, conditions)
 
     # What fraction of individual responses were significant?
     fraction_significant_responses = rdf.groupby(conditions).apply(get_fraction_significant_responses)
     fraction_significant_responses = fraction_significant_responses.reset_index()
-    mdf['fraction_significant_responses'] = fraction_significant_responses.fraction_significant_responses
+    mdf['fraction_significant_responses'] = fraction_significant_responses.fraction_significant_responses.values
 
     if 'index' in mdf.keys():
         mdf = mdf.drop(columns=['index'])
@@ -132,9 +132,9 @@ def annotate_mean_df_with_pref_stim(mean_df, conditions):
 
     mdf['pref_stim'] = False
     for i,x in group:
-        x = x[x.image_name!='omitted']
+        x = x[x[image_name]!='omitted']
         ind = np.where(x['mean_response']==np.amax(x['mean_response']))[0][0]
-        pref_stim = x['image_name'].values[ind]
+        pref_stim = x[image_name].values[ind]
         if type(i) == int:
             mdf.at[(i, pref_stim), 'pref_stim'] = True
         elif len(i) == 2:
