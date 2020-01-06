@@ -152,6 +152,18 @@ class BehaviorOphysLimsApi(OphysLimsApi, BehaviorOphysApiBase):
         behavior_stimulus_file = self.get_behavior_stimulus_file()
         data = pd.read_pickle(behavior_stimulus_file)
         stimulus_presentations_df_pre = get_stimulus_presentations(data, stimulus_timestamps)
+
+        # Add names for gratings stimuli if needed
+        if pd.isnull(stimulus_presentations_df_pre['image_name']).all():
+            if ~pd.isnull(stimulus_presentations_df_pre['orientation']).all():
+                stimulus_presentations_df_pre['image_name'] = stimulus_presentations_df_pre['image_name'].astype(str)
+                for ind_row in stimulus_presentations_df_pre.index:
+                    stimulus_presentations_df_pre.at[ind_row, 'image_name'] = 'gratings_{}'.format(
+                        stimulus_presentations_df_pre.at[ind_row, 'orientation']
+                    )
+            else:
+                raise ValueError('non_null orientation and image_name')
+
         stimulus_metadata_df = get_stimulus_metadata(data)
         idx_name = stimulus_presentations_df_pre.index.name
         stimulus_index_df = stimulus_presentations_df_pre.reset_index().merge(stimulus_metadata_df.reset_index(), on=['image_name']).set_index(idx_name)
