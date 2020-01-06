@@ -372,7 +372,8 @@ class BehaviorOphysSession(LazyPropertyMixin):
         response_analysis_params = {
             "window_around_timepoint_seconds":[-4, 8],
             "response_window_duration_seconds":0.5,
-            "baseline_window_duration_seconds":0.25
+            "baseline_window_duration_seconds":0.25,
+            "ophys_frame_rate": 31,
         }
     ):
         trial_response_xr = response_processing.trial_response_xr(self, response_analysis_params)
@@ -386,7 +387,8 @@ class BehaviorOphysSession(LazyPropertyMixin):
         response_analysis_params = {
             "window_around_timepoint_seconds":[-0.5, 0.75],
             "response_window_duration_seconds":0.5,
-            "baseline_window_duration_seconds":0.25
+            "baseline_window_duration_seconds":0.25,
+            "ophys_frame_rate":31,
         }
     ):
         stimulus_response_xr = response_processing.stimulus_response_xr(self, response_analysis_params)
@@ -397,7 +399,8 @@ class BehaviorOphysSession(LazyPropertyMixin):
         response_analysis_params = {
             "window_around_timepoint_seconds":[-3, 3],
             "response_window_duration_seconds":0.5,
-            "baseline_window_duration_seconds":0.25
+            "baseline_window_duration_seconds":0.25,
+            "ophys_frame_rate": 31,
         }
     ):
         omission_response_xr = response_processing.omission_response_xr(self, response_analysis_params)

@@ -24,7 +24,8 @@ def get_default_trial_response_params():
     trial_response_params = {
         "window_around_timepoint_seconds":[-4, 8],
         "response_window_duration_seconds":0.5,
-        "baseline_window_duration_seconds":0.25
+        "baseline_window_duration_seconds":0.25,
+        "ophys_frame_rate":31,
     }
     return trial_response_params
 
@@ -42,7 +43,8 @@ def get_default_stimulus_response_params():
     stimulus_response_params = {
         "window_around_timepoint_seconds":[-0.5, 0.75],
         "response_window_duration_seconds":0.5,
-        "baseline_window_duration_seconds":0.25
+        "baseline_window_duration_seconds":0.25,
+        "ophys_frame_rate": 31,
     }
     return stimulus_response_params
 
@@ -60,7 +62,8 @@ def get_default_omission_response_params():
     stimulus_response_params = {
         "window_around_timepoint_seconds":[-3, 3],
         "response_window_duration_seconds":0.5,
-        "baseline_window_duration_seconds":0.25
+        "baseline_window_duration_seconds":0.25,
+        "ophys_frame_rate":31,
     }
     return omission_response_params
 
@@ -124,7 +127,8 @@ def trial_response_xr(session, response_analysis_params=None):
     event_indices, start_ind_offset, end_ind_offset, trace_timebase = slice_inds_and_offsets(
         ophys_times=session.ophys_timestamps,
         event_times=event_times,
-        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds']
+        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds'],
+        frame_rate = response_analysis_params['ophys_frame_rate']
     )
     sliced_dataout = eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_offset)
 
@@ -188,9 +192,10 @@ def stimulus_response_xr(session, response_analysis_params=None):
     event_indices = index_of_nearest_value(session.ophys_timestamps, event_times)
 
     event_indices, start_ind_offset, end_ind_offset, trace_timebase = slice_inds_and_offsets(
-        ophys_times=session.ophys_timestamps,
-        event_times=event_times,
-        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds']
+        ophys_times = session.ophys_timestamps,
+        event_times = event_times,
+        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds'],
+        frame_rate = response_analysis_params['ophys_frame_rate']
     )
     sliced_dataout = eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_offset)
 
@@ -260,7 +265,8 @@ def omission_response_xr(session, response_analysis_params=None):
     event_indices, start_ind_offset, end_ind_offset, trace_timebase = slice_inds_and_offsets(
         ophys_times=session.ophys_timestamps,
         event_times=event_times,
-        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds']
+        window_around_timepoint_seconds=response_analysis_params['window_around_timepoint_seconds'],
+        frame_rate = response_analysis_params['ophys_frame_rate']
     )
     sliced_dataout = eventlocked_traces(dff_traces_arr, event_indices, start_ind_offset, end_ind_offset)
 
